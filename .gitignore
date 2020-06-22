@@ -1,0 +1,21 @@
+# The original .git file had the following:
+# gitdir: D:/backup/backup20190815/mainRepo/modules/src/rust-agent-based-models
+
+~$*
+*~
+/target
+**/*.rs.bk
+Cargo.lock
+*_BACKUP_*
+*_BASE_*
+*_LOCAL_*
+*_REMOTE_*
+*.csv
+*.diff
+*.log
+*.mkv
+*.patch
+*.png
+*.tmp
+*.tmp.rs
+*.wbk
