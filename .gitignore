@@ -11,6 +11,7 @@ Cargo.lock
 *_LOCAL_*
 *_REMOTE_*
 *.csv
+*.dat
 *.diff
 *.log
 *.mkv
