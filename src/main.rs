@@ -96,7 +96,6 @@ fn main() {
         }
     };
     let original_hash = calculate_hash(&table);
-    // dbg![table.clone()];
     {
         println!("Paste the account status here. You can enter EOF if you have no data, or Ctrl + C to close this program:");
         let mut mode = Mode::Header;
@@ -213,7 +212,7 @@ fn main() {
                             } else if input == "EOF\n" {
                                 break 'fund_changes;
                             } else {
-                                let mut input_iter = input.split("\t"); // Do not use split_whitespace because funds and actions have spaces
+                                let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
                                 let date = chrono::NaiveDate::parse_from_str(
                                     input_iter.next().unwrap(),
                                     "%d/%m/%Y",
@@ -302,7 +301,6 @@ fn main() {
                 action.push(a.clone());
             }
         }
-        // dbg![table.clone()];
         if !errors.is_empty() {
             consume_input();
             print!("{}", errors);
@@ -312,6 +310,7 @@ fn main() {
         }
     }
     let table = table; // Read-only
+                       // dbg![table.clone()];
     if calculate_hash(&table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
     } else {
@@ -391,13 +390,17 @@ fn main() {
         let _fill_vec = vec![
             fill0, fill1, fill2, fill3, fill4, fill5, fill6, fill7, fill8, fill9,
         ];
-        let _x_label_area_size = 70;
-        let _y_label_area_size = 90;
+        let x_label_area_size = 70;
+        let y_label_area_size = 90;
+        let figure_margin = 10;
+        let _thick_stroke = 4;
+        type Date = chrono::Date<chrono::Utc>;
+        let date_formatter = |date_label: &Date| format!("{}", date_label.format("%b %d"));
         let text_size0 = 60;
         let text_size1 = 44;
         let text_size2 = 34;
         let _background_text = ("Calibri", 1).into_font().color(background_color);
-        let _text0 = ("Calibri", text_size0).into_font().color(color0);
+        let text0 = ("Calibri", text_size0).into_font().color(color0);
         let _text1 = ("Calibri", text_size1).into_font().color(color0);
         let text2 = ("Calibri", text_size2).into_font().color(color0);
         use plotters::style::text_anchor::{HPos, Pos, VPos};
@@ -410,8 +413,57 @@ fn main() {
                 figure_path.to_str().unwrap()
             );
         }
-        let drawing_area = BitMapBackend::new(figure_path, (1920, 1080)).into_drawing_area();
-        drawing_area.fill(background_color).unwrap();
+        let drawing_area0 = BitMapBackend::new(figure_path, (1920, 1080)).into_drawing_area();
+        drawing_area0.fill(background_color).unwrap();
+        let durations = &[7, 30, 90]; // Days
+        drawing_area0
+            .split_evenly((1, durations.len()))
+            .iter()
+            .zip(durations.iter())
+            .for_each(|(drawing_area1, duration)| {
+                match date.checked_sub_signed(chrono::Duration::days(*duration)) {
+                    Some(start_naive_date) => {
+                        let start_date = Date::from_utc(start_naive_date, chrono::Utc);
+                        let today_date = Date::from_utc(date, chrono::Utc);
+                        let ranged_date = plotters::coord::RangedDate::from(start_date..today_date);
+                        let mut chart = ChartBuilder::on(&drawing_area1)
+                            .x_label_area_size(x_label_area_size)
+                            .y_label_area_size(y_label_area_size)
+                            .margin(figure_margin)
+                            .caption(format!("Time series for {} days", duration), text0.clone())
+                            .build_ranged(ranged_date, 0..*duration)
+                            .unwrap();
+                        chart
+                            .configure_mesh()
+                            .line_style_1(&color02)
+                            .line_style_2(&color01)
+                            .x_desc("Time")
+                            .x_label_formatter(&date_formatter)
+                            .axis_style(color0)
+                            .axis_desc_style(text2.clone())
+                            .label_style(text2.clone())
+                            .draw()
+                            .unwrap();
+                        chart
+                            .draw_series(LineSeries::new(
+                                (0..*duration).map(|elapsed| {
+                                    (
+                                        start_date
+                                            .checked_sub_signed(chrono::Duration::days(elapsed))
+                                            .unwrap(),
+                                        elapsed,
+                                    )
+                                }),
+                                color0,
+                            ))
+                            .unwrap();
+                    }
+                    None => eprintln!(
+                        "Error subtracting duration {} from date {}. Please review the code.",
+                        *duration, date
+                    ),
+                }
+            });
     }
     println!("Figures are ready.");
 }
