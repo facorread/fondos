@@ -425,14 +425,15 @@ fn main() {
             fill0, fill1, fill2, fill3, fill4, fill5, fill6, fill7, fill8, fill9,
         ];
         let x_label_area_size = 70;
-        let y_label_area_size = 90;
+        let y_label_area_size0 = 70;
+        let y_label_area_size1 = 40;
         let figure_margin = 10;
         let line_spacing = 30;
         let thick_stroke = 3;
         let date_formatter = |date_label: &Date| format!("{}", date_label.format("%b %d"));
         let text_size0 = 30;
         let text_size1 = 24;
-        let text_size2 = 20;
+        let text_size2 = 24;
         let _background_text = ("Calibri", 1).into_font().color(background_color);
         let text0 = ("Calibri", text_size0).into_font().color(color0);
         let _text1 = ("Calibri", text_size1).into_font().color(color0);
@@ -486,8 +487,8 @@ fn main() {
         drawing_area0
             .split_evenly((1, durations.len()))
             .iter()
-            .zip(durations.iter())
-            .for_each(|(drawing_area1, duration)| {
+            .zip(durations.iter().enumerate())
+            .for_each(|(drawing_area1, (duration_index, duration))| {
                 match date.checked_sub_signed(chrono::Duration::days(*duration)) {
                     Some(start_naive_date) => {
                         let start_date = Date::from_utc(start_naive_date, chrono::Utc);
@@ -548,7 +549,11 @@ fn main() {
                             ..(max_variation + variation_expansion);
                         let mut chart = ChartBuilder::on(&drawing_area1)
                             .x_label_area_size(x_label_area_size)
-                            .y_label_area_size(y_label_area_size)
+                            .y_label_area_size(if duration_index == 0 {
+                                y_label_area_size0
+                            } else {
+                                y_label_area_size1
+                            })
                             .margin(figure_margin)
                             .caption(format!("Time series for {} days", duration), text0.clone())
                             .build_ranged(ranged_date, variation_range)
@@ -557,7 +562,12 @@ fn main() {
                             .configure_mesh()
                             .line_style_1(&color02)
                             .line_style_2(&color01)
-                            .x_desc("Time")
+                            .x_desc("Date")
+                            .y_desc(if duration_index == 0 {
+                                "Fund variation, adjusted for actions (%)"
+                            } else {
+                                ""
+                            })
                             .x_label_formatter(&date_formatter)
                             .axis_style(color0)
                             .axis_desc_style(text2.clone())
