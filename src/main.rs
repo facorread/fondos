@@ -39,7 +39,17 @@ struct Action {
     change: i64,
 }
 
+type Date = chrono::Date<chrono::Utc>;
+
+/// Represents variation of a fund.
+type Variation = (
+    Date,
+    // Variation in the fund, as a proportion of the previous record.
+    f64,
+);
+
 #[derive(Debug)]
+/// Represents a repetition of a fund action.
 struct Repetition {
     fund_index: usize,
     action_index: usize,
@@ -47,11 +57,30 @@ struct Repetition {
     repetition: i32,
 }
 
+#[derive(Clone, Debug)]
+/// Represents a label in the figure.
+struct Label<'label_lifetime> {
+    /// Index of the fund; useful for coloring
+    index: usize,
+    /// Reference to the name of the fund
+    fund: &'label_lifetime String,
+    /// Variation over the full range of dates
+    variation: f64,
+    /// coordinate in the backend system (pixels)
+    backend_coord: plotters::drawing::backend::BackendCoord,
+}
+
 #[derive(Clone, Debug, Deserialize, Hash, Serialize)]
 struct Series {
     fund: String,
     balance: Vec<Balance>,
     action: Vec<Action>,
+}
+
+#[derive(Clone, Debug)]
+struct PlotSeries {
+    fund: String,
+    variation: Vec<Variation>,
 }
 
 #[derive(Clone, Debug, Deserialize, Hash, Serialize)]
@@ -80,7 +109,8 @@ fn consume_input() {
 fn main() {
     use plotters::prelude::*;
     use std::fs;
-    // use std::io::Write as IoWrite; // See https://doc.rust-lang.org/std/macro.writeln.html
+    // Useful for debugging on vscode.
+    let interactive_run = true;
     let date = chrono::Local::today().naive_local();
     let funds_file_name = "funds.dat";
     let r_err = &*format!("Error reading the file {}", funds_file_name);
@@ -96,8 +126,8 @@ fn main() {
         }
     };
     let original_hash = calculate_hash(&table);
-    {
-        println!("Paste the account status here. You can enter EOF if you have no data, or Ctrl + C to close this program:");
+    if interactive_run {
+        println!("Paste the account status here.\nEnter EOF if you have no data, or Ctrl + C to close this program:");
         let mut mode = Mode::Header;
         let mut errors = String::new();
         let mut errors_produced = false;
@@ -185,128 +215,132 @@ fn main() {
     }
     // The page "Recomposición de su inversión en su Dafuturo" should not be used by this program because movements between
     // funds take several days to complete. Instead, use fund actions from the "Últimos Movimientos" pages.
-    'fund_changes: loop {
-        println!("Paste the 'Ultimos Movimientos' page here. Enter EOF when you are done with the page, or Ctrl + C to close this program:");
-        let mut mode = Mode::Header;
-        let mut errors = String::new();
-        let mut errors_produced = false;
-        let mut repetitions = Vec::<Repetition>::with_capacity(10);
-        loop {
-            use std::io;
-            let mut input = String::new();
-            match io::stdin().read_line(&mut input) {
-                Ok(_number_of_bytes_read) => {
-                    match mode {
-                        Mode::Header => {
-                            if input.starts_with(
-                                "Fecha	Nombre del multiportafolio	Movimiento	Tipo Aporte	Valor",
-                            ) {
-                                mode = Mode::Table;
-                            } else if input == "EOF\n" {
-                                break 'fund_changes;
+    if interactive_run {
+        'fund_changes: loop {
+            println!("Paste the 'Ultimos Movimientos' page here.\nEnter EOF when you are done with all pages, or Ctrl + C to close this program:");
+            let mut mode = Mode::Header;
+            let mut errors = String::new();
+            let mut errors_produced = false;
+            let mut repetitions = Vec::<Repetition>::with_capacity(10);
+            loop {
+                use std::io;
+                let mut input = String::new();
+                match io::stdin().read_line(&mut input) {
+                    Ok(_number_of_bytes_read) => {
+                        match mode {
+                            Mode::Header => {
+                                if input.starts_with(
+                                    "Fecha	Nombre del multiportafolio	Movimiento	Tipo Aporte	Valor",
+                                ) {
+                                    mode = Mode::Table;
+                                } else if input == "EOF\n" {
+                                    break 'fund_changes;
+                                }
                             }
-                        }
-                        Mode::Table => {
-                            if input == "\n" {
-                                mode = Mode::Footer;
-                            } else if input == "EOF\n" {
-                                break 'fund_changes;
-                            } else {
-                                let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
-                                let date = chrono::NaiveDate::parse_from_str(
-                                    input_iter.next().unwrap(),
-                                    "%d/%m/%Y",
-                                )
-                                .unwrap();
-                                let fund_str = input_iter.next().unwrap();
-                                let action_str = input_iter.next().unwrap();
-                                let _type_str = input_iter.next().unwrap();
-                                let change_raw = input_iter.next().unwrap();
-                                let change_str = change_raw.replace(&['$', ',', '\n'][..], "");
-                                let change_f = match change_str.parse::<f64>() {
-                                    Ok(c) => match action_str {
-                                        "Aporte" | "Aporte por traslado de otro portafolio" => c,
-                                        "Aporte por traslado a otro portafolio" => -c,
-                                        _ => {
-                                            errors = format!("{}Error: Action '{}' not recognized. Please review the code.\n", errors, action_str);
+                            Mode::Table => {
+                                if input == "\n" {
+                                    mode = Mode::Footer;
+                                } else if input == "EOF\n" {
+                                    break 'fund_changes;
+                                } else {
+                                    let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
+                                    let date = chrono::NaiveDate::parse_from_str(
+                                        input_iter.next().unwrap(),
+                                        "%d/%m/%Y",
+                                    )
+                                    .unwrap();
+                                    let fund_str = input_iter.next().unwrap();
+                                    let action_str = input_iter.next().unwrap();
+                                    let _type_str = input_iter.next().unwrap();
+                                    let change_raw = input_iter.next().unwrap();
+                                    let change_str = change_raw.replace(&['$', ',', '\n'][..], "");
+                                    let change_f = match change_str.parse::<f64>() {
+                                        Ok(c) => match action_str {
+                                            "Aporte" | "Aporte por traslado de otro portafolio" => {
+                                                c
+                                            }
+                                            "Aporte por traslado a otro portafolio" => -c,
+                                            _ => {
+                                                errors = format!("{}Error: Action '{}' not recognized. Please review the code.\n", errors, action_str);
+                                                errors_produced = true;
+                                                0.
+                                            }
+                                        },
+                                        Err(e) => {
+                                            errors = format!("{}Error in line {}: Could not parse '{}' as a number for action {}: {}.\n", errors, input, change_str, action_str, e);
                                             errors_produced = true;
                                             0.
                                         }
-                                    },
-                                    Err(e) => {
-                                        errors = format!("{}Error in line {}: Could not parse '{}' as a number for action {}: {}.\n", errors, input, change_str, action_str, e);
-                                        errors_produced = true;
-                                        0.
-                                    }
-                                };
-                                let change = (change_f * 100.0) as i64;
-                                match table.table.iter().position(|s| s.fund == fund_str) {
-                                    Some(fund_index) => {
-                                        match table.table[fund_index].action.iter().position(
-                                            |a: &Action| a.date == date && a.change == change,
-                                        ) {
-                                            Some(action_index) => {
-                                                // This can happen frequently. See if this has been counted before.
-                                                match repetitions.iter_mut().find(
-                                                    |r: &&mut Repetition| {
-                                                        r.fund_index == fund_index
-                                                            && r.action_index == action_index
-                                                    },
-                                                ) {
-                                                    Some(r) => r.repetition += 1,
-                                                    None => repetitions.push(Repetition {
-                                                        // This push is valid for both completely new actions as well as actions that are already repeated
-                                                        fund_index,
-                                                        action_index,
-                                                        repetition: 1,
-                                                    }),
-                                                };
+                                    };
+                                    let change = (change_f * 100.0) as i64;
+                                    match table.table.iter().position(|s| s.fund == fund_str) {
+                                        Some(fund_index) => {
+                                            match table.table[fund_index].action.iter().position(
+                                                |a: &Action| a.date == date && a.change == change,
+                                            ) {
+                                                Some(action_index) => {
+                                                    // This can happen frequently. See if this has been counted before.
+                                                    match repetitions.iter_mut().find(
+                                                        |r: &&mut Repetition| {
+                                                            r.fund_index == fund_index
+                                                                && r.action_index == action_index
+                                                        },
+                                                    ) {
+                                                        Some(r) => r.repetition += 1,
+                                                        None => repetitions.push(Repetition {
+                                                            // This push is valid for both completely new actions as well as actions that are already repeated
+                                                            fund_index,
+                                                            action_index,
+                                                            repetition: 1,
+                                                        }),
+                                                    };
+                                                }
+                                                None => table.table[fund_index]
+                                                    .action
+                                                    .push(Action { date, change }),
                                             }
-                                            None => table.table[fund_index]
-                                                .action
-                                                .push(Action { date, change }),
                                         }
-                                    }
-                                    None => {
-                                        table.table.push(Series {
-                                            fund: String::from(fund_str),
-                                            balance: vec![],
-                                            action: vec![Action { date, change }],
-                                        });
-                                    }
-                                };
+                                        None => {
+                                            table.table.push(Series {
+                                                fund: String::from(fund_str),
+                                                balance: vec![],
+                                                action: vec![Action { date, change }],
+                                            });
+                                        }
+                                    };
+                                }
                             }
-                        }
-                        Mode::Footer => {
-                            if input == "que origina esta transacción.\n" {
-                                break;
-                            } else if input == "EOF\n" {
-                                break 'fund_changes;
+                            Mode::Footer => {
+                                if input == "que origina esta transacción.\n" {
+                                    break;
+                                } else if input == "EOF\n" {
+                                    break 'fund_changes;
+                                }
                             }
                         }
                     }
+                    Err(error) => println!("Error parsing data: {}", error),
                 }
-                Err(error) => println!("Error parsing data: {}", error),
             }
-        }
-        for r in repetitions {
-            let action = &mut table.table[r.fund_index].action;
-            let a = action[r.action_index].clone();
-            let reps = action
-                .iter()
-                .filter(|b| a.date == b.date && a.change == b.change)
-                .count() as i32
-                - r.repetition;
-            for _repetition in 0..reps {
-                action.push(a.clone());
+            for r in repetitions {
+                let action = &mut table.table[r.fund_index].action;
+                let a = action[r.action_index].clone();
+                let reps = action
+                    .iter()
+                    .filter(|b| a.date == b.date && a.change == b.change)
+                    .count() as i32
+                    - r.repetition;
+                for _repetition in 0..reps {
+                    action.push(a.clone());
+                }
             }
-        }
-        if !errors.is_empty() {
-            consume_input();
-            print!("{}", errors);
-        }
-        if errors_produced {
-            return;
+            if !errors.is_empty() {
+                consume_input();
+                print!("{}", errors);
+            }
+            if errors_produced {
+                return;
+            }
         }
     }
     let table = table; // Read-only
@@ -365,14 +399,14 @@ fn main() {
         let color02 = color0.mix(0.2);
         let color1 = &plotters::style::RGBColor(255, 192, 0);
         let color2 = &plotters::style::RGBColor(0, 176, 80);
-        let color3 = &plotters::style::RGBColor(32, 56, 100);
+        let color3 = &plotters::style::RGBColor(132, 156, 100);
         let color4 = &plotters::style::RGBColor(255, 231, 146);
         let color5 = &plotters::style::RGBColor(157, 85, 15);
         let color6 = &plotters::style::RGBColor(196, 53, 53);
         let color7 = &plotters::style::RGBColor(158, 138, 227);
         let color8 = &plotters::style::RGBColor(134, 202, 217);
         let color9 = &plotters::style::RGBColor(0, 199, 196);
-        let _color_vec = vec![
+        let color_vec = vec![
             color0, color1, color2, color3, color4, color5, color6, color7, color8, color9,
         ];
         let fill0 = color0.filled();
@@ -393,12 +427,12 @@ fn main() {
         let x_label_area_size = 70;
         let y_label_area_size = 90;
         let figure_margin = 10;
-        let _thick_stroke = 4;
-        type Date = chrono::Date<chrono::Utc>;
+        let line_spacing = 30;
+        let thick_stroke = 3;
         let date_formatter = |date_label: &Date| format!("{}", date_label.format("%b %d"));
-        let text_size0 = 60;
-        let text_size1 = 44;
-        let text_size2 = 34;
+        let text_size0 = 30;
+        let text_size1 = 24;
+        let text_size2 = 20;
         let _background_text = ("Calibri", 1).into_font().color(background_color);
         let text0 = ("Calibri", text_size0).into_font().color(color0);
         let _text1 = ("Calibri", text_size1).into_font().color(color0);
@@ -415,7 +449,40 @@ fn main() {
         }
         let drawing_area0 = BitMapBackend::new(figure_path, (1920, 1080)).into_drawing_area();
         drawing_area0.fill(background_color).unwrap();
-        let durations = &[7, 30, 90]; // Days
+        let durations = &[7, 15, 30]; // Days
+        let max_duration = durations.iter().max().unwrap();
+        let minimum_date = date
+            .checked_sub_signed(chrono::Duration::days(*max_duration))
+            .unwrap();
+        let table0 = Table {
+            table: table
+                .table
+                .iter()
+                .map(|series| Series {
+                    fund: series.fund.clone(),
+                    balance: {
+                        let mut b: Vec<_> = series
+                            .balance
+                            .iter()
+                            .filter(|balance| balance.date >= minimum_date)
+                            .cloned()
+                            .collect();
+                        b.sort_unstable_by(|b1, b2| b1.date.cmp(&b2.date));
+                        b
+                    },
+                    action: {
+                        let mut a: Vec<_> = series
+                            .action
+                            .iter()
+                            .filter(|action| action.date >= minimum_date)
+                            .cloned()
+                            .collect();
+                        a.sort_unstable_by(|a1, a2| a1.date.cmp(&a2.date));
+                        a
+                    },
+                })
+                .collect(),
+        };
         drawing_area0
             .split_evenly((1, durations.len()))
             .iter()
@@ -426,12 +493,65 @@ fn main() {
                         let start_date = Date::from_utc(start_naive_date, chrono::Utc);
                         let today_date = Date::from_utc(date, chrono::Utc);
                         let ranged_date = plotters::coord::RangedDate::from(start_date..today_date);
+                        let series_vec: Vec<_> = table0
+                            .table
+                            .iter()
+                            .map(|series| PlotSeries {
+                                fund: series.fund.to_lowercase(),
+                                variation: {
+                                    let balance_iter = series
+                                        .balance
+                                        .iter()
+                                        .skip_while(|b| b.date < start_naive_date);
+                                    let initial_balance = balance_iter.clone().next().unwrap();
+                                    let initial_balance_f64 = initial_balance.balance as f64;
+                                    let mut action_iter = series
+                                        .action
+                                        .iter()
+                                        .skip_while(|a| a.date < initial_balance.date) // skip_while() creates a new iter.
+                                        .peekable();
+                                    balance_iter
+                                        .scan(initial_balance_f64, |running_balance, b| {
+                                            #[allow(clippy::while_let_on_iterator)]
+                                            while let Some(action) = action_iter.peek() {
+                                                // skip_while() creates a new iter; do not use in this loop.
+                                                if action.date >= b.date {
+                                                    break;
+                                                }
+                                                *running_balance += action.change as f64;
+                                                action_iter.next();
+                                            }
+                                            Some((
+                                                Date::from_utc(b.date, chrono::Utc),
+                                                // b.balance as f64 / *running_balance, // Debug
+                                                100.0 * b.balance as f64 / *running_balance - 100.0,
+                                            ))
+                                        })
+                                        .collect()
+                                },
+                            })
+                            .collect();
+                        let min_variation = series_vec
+                            .iter()
+                            .map(|series| series.variation.iter().map(|a| a.1))
+                            .flatten()
+                            .min_by(|a, b| a.partial_cmp(&b).unwrap())
+                            .unwrap();
+                        let max_variation = series_vec
+                            .iter()
+                            .map(|series| series.variation.iter().map(|a| a.1))
+                            .flatten()
+                            .max_by(|a, b| a.partial_cmp(&b).unwrap())
+                            .unwrap();
+                        let variation_expansion = 0.02 * (max_variation - min_variation);
+                        let variation_range = (min_variation - variation_expansion)
+                            ..(max_variation + variation_expansion);
                         let mut chart = ChartBuilder::on(&drawing_area1)
                             .x_label_area_size(x_label_area_size)
                             .y_label_area_size(y_label_area_size)
                             .margin(figure_margin)
                             .caption(format!("Time series for {} days", duration), text0.clone())
-                            .build_ranged(ranged_date, 0..*duration)
+                            .build_ranged(ranged_date, variation_range)
                             .unwrap();
                         chart
                             .configure_mesh()
@@ -444,19 +564,49 @@ fn main() {
                             .label_style(text2.clone())
                             .draw()
                             .unwrap();
-                        chart
-                            .draw_series(LineSeries::new(
-                                (0..*duration).map(|elapsed| {
-                                    (
-                                        start_date
-                                            .checked_sub_signed(chrono::Duration::days(elapsed))
-                                            .unwrap(),
-                                        elapsed,
-                                    )
-                                }),
-                                color0,
-                            ))
-                            .unwrap();
+                        let mut labels: Vec<_> = series_vec
+                            .iter()
+                            .enumerate()
+                            .map(|(index, series)| Label {
+                                index,
+                                fund: &series.fund,
+                                variation: series.variation.last().unwrap().1,
+                                backend_coord: {
+                                    let mut bc = chart.backend_coord(&(
+                                        start_date,
+                                        series.variation.last().unwrap().1,
+                                    ));
+                                    bc.0 += 20;
+                                    bc
+                                },
+                            })
+                            .collect();
+                        labels
+                            .sort_unstable_by(|p1, p2| p1.backend_coord.1.cmp(&p2.backend_coord.1));
+                        for (index, series) in series_vec.iter().enumerate() {
+                            chart
+                                .draw_series(LineSeries::new(
+                                    series.variation.clone(),
+                                    color_vec[index].stroke_width(thick_stroke),
+                                ))
+                                .unwrap();
+                        }
+                        labels.iter().fold(0, |min_y, label| {
+                            let mut coord = label.backend_coord;
+                            if coord.1 < min_y {
+                                coord.1 = min_y
+                            }
+                            drawing_area0
+                                .draw_text(
+                                    &format!("{} {:.2}%", label.fund, label.variation),
+                                    &("Calibri", text_size1)
+                                        .into_font()
+                                        .color(color_vec[label.index]),
+                                    coord,
+                                )
+                                .unwrap();
+                            coord.1 + line_spacing
+                        });
                     }
                     None => eprintln!(
                         "Error subtracting duration {} from date {}. Please review the code.",
