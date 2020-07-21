@@ -325,11 +325,11 @@ fn main() {
             for r in repetitions {
                 let action = &mut table.table[r.fund_index].action;
                 let a = action[r.action_index].clone();
-                let reps = action
-                    .iter()
-                    .filter(|b| a.date == b.date && a.change == b.change)
-                    .count() as i32
-                    - r.repetition;
+                let reps = r.repetition
+                    - action
+                        .iter()
+                        .filter(|b| a.date == b.date && a.change == b.change)
+                        .count() as i32;
                 for _repetition in 0..reps {
                     action.push(a.clone());
                 }
@@ -345,6 +345,7 @@ fn main() {
     }
     let table = table; // Read-only
                        // dbg![table.clone()];
+                       // return;
     if calculate_hash(&table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
     } else {
