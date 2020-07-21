@@ -586,6 +586,14 @@ fn main() {
                             .label_style(text2.clone())
                             .draw()
                             .unwrap();
+                        for (index, series) in series_vec.iter().enumerate() {
+                            chart
+                                .draw_series(LineSeries::new(
+                                    series.variation.clone(),
+                                    color_vec[index].stroke_width(thick_stroke),
+                                ))
+                                .unwrap();
+                        }
                         let mut labels: Vec<_> = series_vec
                             .iter()
                             .enumerate()
@@ -605,30 +613,32 @@ fn main() {
                             .collect();
                         labels
                             .sort_unstable_by(|p1, p2| p1.backend_coord.1.cmp(&p2.backend_coord.1));
-                        for (index, series) in series_vec.iter().enumerate() {
-                            chart
-                                .draw_series(LineSeries::new(
-                                    series.variation.clone(),
-                                    color_vec[index].stroke_width(thick_stroke),
-                                ))
-                                .unwrap();
-                        }
-                        labels.iter().fold(0, |min_y, label| {
-                            let mut coord = label.backend_coord;
-                            if coord.1 < min_y {
-                                coord.1 = min_y
-                            }
-                            drawing_area0
-                                .draw_text(
-                                    &format!("{} {:.2}%", label.fund, label.variation),
-                                    &("Calibri", text_size1)
-                                        .into_font()
-                                        .color(color_vec[label.index]),
-                                    coord,
-                                )
-                                .unwrap();
-                            coord.1 + line_spacing
-                        });
+                        let backend_y_range = (
+                            chart.backend_coord(&(start_date, max_variation)).1,
+                            chart.backend_coord(&(start_date, min_variation)).1
+                                - line_spacing * labels.len() as i32,
+                        );
+                        labels
+                            .iter()
+                            .fold(backend_y_range, |(min_y, max_y), label| {
+                                let mut coord = label.backend_coord;
+                                if coord.1 < min_y {
+                                    coord.1 = min_y;
+                                }
+                                if coord.1 > max_y {
+                                    coord.1 = max_y;
+                                }
+                                drawing_area0
+                                    .draw_text(
+                                        &format!("{} {:.2}%", label.fund, label.variation),
+                                        &("Calibri", text_size1)
+                                            .into_font()
+                                            .color(color_vec[label.index]),
+                                        coord,
+                                    )
+                                    .unwrap();
+                                (coord.1 + line_spacing, max_y + line_spacing)
+                            });
                     }
                     None => eprintln!(
                         "Error subtracting duration {} from date {}. Please review the code.",
