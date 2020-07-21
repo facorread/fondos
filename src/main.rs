@@ -514,6 +514,8 @@ fn main() {
                                         .peekable();
                                     balance_iter
                                         .scan(initial_balance_f64, |running_balance, b| {
+                                            let previous_balance = *running_balance;
+                                            let mut adjusted_current_balance = b.balance;
                                             #[allow(clippy::while_let_on_iterator)]
                                             while let Some(action) = action_iter.peek() {
                                                 // skip_while() creates a new iter; do not use in this loop.
@@ -521,12 +523,15 @@ fn main() {
                                                     break;
                                                 }
                                                 *running_balance += action.change as f64;
+                                                adjusted_current_balance -= action.change;
                                                 action_iter.next();
                                             }
                                             Some((
                                                 Date::from_utc(b.date, chrono::Utc),
                                                 // b.balance as f64 / *running_balance, // Debug
-                                                100.0 * b.balance as f64 / *running_balance - 100.0,
+                                                100.0 * adjusted_current_balance as f64
+                                                    / previous_balance
+                                                    - 100.0,
                                             ))
                                         })
                                         .collect()
