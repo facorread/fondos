@@ -106,6 +106,11 @@ fn consume_input() {
     }
 }
 
+fn columns(n_durations: usize) -> usize {
+    let n = n_durations + 1; // Number of figures
+    n / 2 + n % 2
+}
+
 fn main() {
     use plotters::prelude::*;
     use std::fs;
@@ -485,8 +490,9 @@ fn main() {
                 })
                 .collect(),
         };
+        // dbg!(&table0);
         drawing_area0
-            .split_evenly((1, durations.len()))
+            .split_evenly((2, columns(durations.len())))
             .iter()
             .zip(durations.iter().enumerate())
             .for_each(|(drawing_area1, (duration_index, duration))| {
