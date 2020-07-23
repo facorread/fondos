@@ -107,8 +107,7 @@ fn consume_input() {
 }
 
 fn columns(n_durations: usize) -> usize {
-    let n = n_durations + 1; // Number of figures
-    n / 2 + n % 2
+    n_durations / 2 + n_durations % 2
 }
 
 fn main() {
@@ -349,7 +348,7 @@ fn main() {
         }
     }
     let table = table; // Read-only
-                       // dbg![table.clone()];
+                       // dbg!(&table);
                        // return;
     if calculate_hash(&table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
@@ -456,7 +455,7 @@ fn main() {
         }
         let drawing_area0 = BitMapBackend::new(figure_path, (1920, 1080)).into_drawing_area();
         drawing_area0.fill(background_color).unwrap();
-        let durations = &[7, 15, 30]; // Days
+        let durations = &[7, 15, 30, 70]; // Days
         let max_duration = durations.iter().max().unwrap();
         let minimum_date = date
             .checked_sub_signed(chrono::Duration::days(*max_duration))
@@ -501,6 +500,32 @@ fn main() {
                         let start_date = Date::from_utc(start_naive_date, chrono::Utc);
                         let today_date = Date::from_utc(date, chrono::Utc);
                         let ranged_date = plotters::coord::RangedDate::from(start_date..today_date);
+                        let (consolidated_balance_i, consolidated_investment_i) = table0
+                            .table
+                            .iter()
+                            .fold((0i64, 0i64), |(accum_balance, accum_investment), series| {
+                                let balance_iter = series
+                                    .balance
+                                    .iter()
+                                    .skip_while(|b| b.date < start_naive_date);
+                                let initial_balance = balance_iter.clone().next().unwrap();
+                                (
+                                    accum_balance + series.balance.last().unwrap().balance,
+                                    accum_investment
+                                        + initial_balance.balance
+                                        + series
+                                            .action
+                                            .iter()
+                                            .skip_while(|a| a.date < initial_balance.date)
+                                            .map(|a| a.change)
+                                            .sum::<i64>(),
+                                )
+                            });
+                        let consolidated_investment = consolidated_investment_i as f64 / 100.0;
+                        let consolidated_variation =
+                            consolidated_balance_i as f64 / 100.0 - consolidated_investment;
+                        let consolidated_variation_percent =
+                            100.0 * consolidated_variation / consolidated_investment;
                         let series_vec: Vec<_> = table0
                             .table
                             .iter()
@@ -567,16 +592,25 @@ fn main() {
                                 y_label_area_size1
                             })
                             .margin(figure_margin)
-                            .caption(format!("Time series for {} days", duration), text0.clone())
+                            .caption(
+                                format!(
+                                    "{} días (inversión ${:.2}, rendimiento ${:.2} ({:.2}%))",
+                                    duration,
+                                    consolidated_investment,
+                                    consolidated_variation,
+                                    consolidated_variation_percent,
+                                ),
+                                text0.clone(),
+                            )
                             .build_ranged(ranged_date, variation_range)
                             .unwrap();
                         chart
                             .configure_mesh()
                             .line_style_1(&color02)
                             .line_style_2(&color01)
-                            .x_desc("Date")
+                            .x_desc("Fecha")
                             .y_desc(if duration_index == 0 {
-                                "Fund variation, adjusted for actions (%)"
+                                "Variación diaria excepto aportes y retiros (%)"
                             } else {
                                 ""
                             })
