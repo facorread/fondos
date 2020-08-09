@@ -116,7 +116,7 @@ fn main() {
     use plotters::prelude::*;
     use std::fs;
     // Useful for debugging on vscode.
-    let interactive_run = false;
+    let interactive_run = true;
     let date = chrono::Local::today().naive_local();
     let funds_file_name = "funds.dat";
     let r_err = &*format!("Error reading the file {}", funds_file_name);
