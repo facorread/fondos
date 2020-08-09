@@ -77,6 +77,15 @@ struct Series {
     action: Vec<Action>,
 }
 
+#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
+struct newSeries {
+    fund: String,
+    balance: Vec<Balance>,
+    action: Vec<Action>,
+    fundValue: Vec<Balance>,
+    unitValue: Vec<Balance>,
+}
+
 #[derive(Clone, Debug)]
 struct PlotSeries {
     fund: String,
@@ -89,7 +98,20 @@ struct Table {
     table: Vec<Series>,
 }
 
+#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
+struct newTable {
+    // List of time series, in the same order than self.fund
+    table: Vec<newSeries>,
+}
+
 fn calculate_hash(t: &Table) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    t.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn calculate_new_hash(t: &newTable) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     t.hash(&mut hasher);
@@ -114,7 +136,7 @@ fn main() {
     use plotters::prelude::*;
     use std::fs;
     // Useful for debugging on vscode.
-    let interactive_run = true;
+    let interactive_run = false;
     let date = chrono::Local::today().naive_local();
     let funds_file_name = "funds.dat";
     let r_err = &*format!("Error reading the file {}", funds_file_name);
@@ -350,7 +372,20 @@ fn main() {
     let table = table; // Read-only
                        // dbg!(&table);
                        // return;
-    if calculate_hash(&table) == original_hash {
+    let new_table = newTable {
+        table: table
+            .table
+            .iter()
+            .map(|series: &Series| newSeries {
+                fund: series.fund.clone(),
+                action: series.action.clone(),
+                balance: series.balance.clone(),
+                fundValue: Vec::new(),
+                unitValue: Vec::new(),
+            })
+            .collect(),
+    };
+    if calculate_new_hash(&new_table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
     } else {
         println!("Creating new funds file...");
@@ -359,7 +394,7 @@ fn main() {
         {
             let new_err = &*format!("Error writing to temporary file {}", funds_file_name);
             let new_file = fs::File::create(new_path).expect(new_err);
-            bincode::serialize_into(new_file, &table).expect(new_err);
+            bincode::serialize_into(new_file, &new_table).expect(new_err);
         }
         if db_path.exists() {
             let backup_file_name = format!(
