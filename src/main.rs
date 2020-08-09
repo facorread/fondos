@@ -504,11 +504,11 @@ fn main() {
                             .table
                             .iter()
                             .fold((0i64, 0i64), |(accum_balance, accum_investment), series| {
-                                let balance_iter = series
+                                let initial_balance = series
                                     .balance
                                     .iter()
-                                    .skip_while(|b| b.date < start_naive_date);
-                                let initial_balance = balance_iter.clone().next().unwrap();
+                                    .find(|b| b.date >= start_naive_date)
+                                    .unwrap();
                                 (
                                     accum_balance + series.balance.last().unwrap().balance,
                                     accum_investment
@@ -557,12 +557,20 @@ fn main() {
                                                 adjusted_current_balance -= action.change;
                                                 action_iter.next();
                                             }
+                                            let variation1 = 100.0
+                                                * adjusted_current_balance as f64
+                                                / previous_balance
+                                                - 100.0;
+                                            let variation2 =
+                                                100.0 * b.balance as f64 / previous_balance - 100.0;
                                             Some((
                                                 Date::from_utc(b.date, chrono::Utc),
                                                 // b.balance as f64 / *running_balance, // Debug
-                                                100.0 * adjusted_current_balance as f64
-                                                    / previous_balance
-                                                    - 100.0,
+                                                if variation1.abs() > variation2.abs() {
+                                                    variation2
+                                                } else {
+                                                    variation1
+                                                },
                                             ))
                                         })
                                         .collect()
