@@ -85,15 +85,6 @@ struct Series {
     fund: String,
     balance: Vec<Balance>,
     action: Vec<Action>,
-    fund_value: Vec<Balance>,
-    unit_value: Vec<Balance>,
-}
-
-#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
-struct NewSeries {
-    fund: String,
-    balance: Vec<Balance>,
-    action: Vec<Action>,
     fund_value: Vec<FundValue>,
 }
 
@@ -107,12 +98,6 @@ struct PlotSeries {
 struct Table {
     // List of time series, in the same order than self.fund
     table: Vec<Series>,
-}
-
-#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
-struct NewTable {
-    // List of time series, in the same order than self.fund
-    table: Vec<NewSeries>,
 }
 
 fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
@@ -140,7 +125,7 @@ fn main() {
     use plotters::prelude::*;
     use std::fs;
     // Useful for debugging on vscode.
-    let interactive_run = false;
+    let interactive_run = true;
     let date = chrono::Local::today().naive_local();
     let funds_file_name = "funds.dat";
     let r_err = &*format!("Error reading the file {}", funds_file_name);
@@ -210,7 +195,6 @@ fn main() {
                                                 balance: vec![Balance { date, balance }],
                                                 action: Vec::<_>::with_capacity(10),
                                                 fund_value: Vec::<_>::with_capacity(10),
-                                                unit_value: Vec::<_>::with_capacity(10),
                                             });
                                         }
                                     }
@@ -338,7 +322,6 @@ fn main() {
                                                 balance: vec![],
                                                 action: vec![Action { date, change }],
                                                 fund_value: Vec::<_>::with_capacity(10),
-                                                unit_value: Vec::<_>::with_capacity(10),
                                             });
                                         }
                                     };
@@ -380,19 +363,7 @@ fn main() {
     let table = table; // Read-only
                        // dbg!(&table);
                        // return;
-    let new_table = NewTable {
-        table: table
-            .table
-            .iter()
-            .map(|s: &Series| NewSeries {
-                fund: s.fund.clone(),
-                balance: s.balance.clone(),
-                action: s.action.clone(),
-                fund_value: Vec::new(),
-            })
-            .collect(),
-    };
-    if calculate_hash(&new_table) == original_hash {
+    if calculate_hash(&table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
     } else {
         println!("Creating new funds file...");
@@ -401,7 +372,7 @@ fn main() {
         {
             let new_err = &*format!("Error writing to temporary file {}", funds_file_name);
             let new_file = fs::File::create(new_path).expect(new_err);
-            bincode::serialize_into(new_file, &new_table).expect(new_err);
+            bincode::serialize_into(new_file, &table).expect(new_err);
         }
         if db_path.exists() {
             let backup_file_name = format!(
@@ -529,7 +500,6 @@ fn main() {
                         a
                     },
                     fund_value: Vec::<_>::new(),
-                    unit_value: Vec::<_>::new(),
                 })
                 .collect(),
         };
