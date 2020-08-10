@@ -32,6 +32,16 @@ struct Balance {
 }
 
 #[derive(Clone, Debug, Deserialize, Hash, Serialize)]
+/// Represents a record of whole fund value and unit value.
+struct FundValue {
+    date: chrono::NaiveDate,
+    /// Value of the whole fund, expressed in cents. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
+    fund_value: i64,
+    /// Value of a fund unit, expressed in cents. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
+    unit_value: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
 /// Represents a record of an action in a fund.
 struct Action {
     date: chrono::NaiveDate,
@@ -79,6 +89,14 @@ struct Series {
     unit_value: Vec<Balance>,
 }
 
+#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
+struct NewSeries {
+    fund: String,
+    balance: Vec<Balance>,
+    action: Vec<Action>,
+    fund_value: Vec<FundValue>,
+}
+
 #[derive(Clone, Debug)]
 struct PlotSeries {
     fund: String,
@@ -91,8 +109,14 @@ struct Table {
     table: Vec<Series>,
 }
 
-fn calculate_hash(t: &Table) -> u64 {
-    use std::hash::{Hash, Hasher};
+#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
+struct NewTable {
+    // List of time series, in the same order than self.fund
+    table: Vec<NewSeries>,
+}
+
+fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
+    use std::hash::Hasher;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     t.hash(&mut hasher);
     hasher.finish()
@@ -116,7 +140,7 @@ fn main() {
     use plotters::prelude::*;
     use std::fs;
     // Useful for debugging on vscode.
-    let interactive_run = true;
+    let interactive_run = false;
     let date = chrono::Local::today().naive_local();
     let funds_file_name = "funds.dat";
     let r_err = &*format!("Error reading the file {}", funds_file_name);
@@ -356,7 +380,19 @@ fn main() {
     let table = table; // Read-only
                        // dbg!(&table);
                        // return;
-    if calculate_hash(&table) == original_hash {
+    let new_table = NewTable {
+        table: table
+            .table
+            .iter()
+            .map(|s: &Series| NewSeries {
+                fund: s.fund.clone(),
+                balance: s.balance.clone(),
+                action: s.action.clone(),
+                fund_value: Vec::new(),
+            })
+            .collect(),
+    };
+    if calculate_hash(&new_table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
     } else {
         println!("Creating new funds file...");
@@ -365,7 +401,7 @@ fn main() {
         {
             let new_err = &*format!("Error writing to temporary file {}", funds_file_name);
             let new_file = fs::File::create(new_path).expect(new_err);
-            bincode::serialize_into(new_file, &table).expect(new_err);
+            bincode::serialize_into(new_file, &new_table).expect(new_err);
         }
         if db_path.exists() {
             let backup_file_name = format!(
