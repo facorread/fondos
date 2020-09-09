@@ -23,6 +23,13 @@ enum Mode {
     Footer,
 }
 
+enum Mode1 {
+    Header,
+    Header1,
+    Table,
+    Footer,
+}
+
 #[derive(Clone, Debug, Deserialize, Hash, Serialize)]
 /// Represents a record of the money balance in a fund.
 struct Balance {
@@ -275,7 +282,8 @@ fn main() {
                                             "Aporte" | "Aporte por traslado de otro portafolio" => {
                                                 c
                                             }
-                                            "Aporte por traslado a otro portafolio" => -c,
+                                            "Aporte por traslado a otro portafolio"
+                                            | "Retiro parcial" => -c,
                                             _ => {
                                                 errors = format!("{}Error: Action '{}' not recognized. Please review the code.\n", errors, action_str);
                                                 errors_produced = true;
@@ -358,6 +366,132 @@ fn main() {
             if errors_produced {
                 return;
             }
+        }
+        println!("Paste the fund and unit values here.\nEnter EOF if you have no data, or Ctrl + C to close this program:");
+        let mut mode = Mode1::Header;
+        let mut errors = String::new();
+        let mut errors_produced = false;
+        loop {
+            use std::io;
+            let mut input = String::new();
+            match io::stdin().read_line(&mut input) {
+                Ok(_number_of_bytes_read) => match mode {
+                    Mode1::Header => {
+                        if input.starts_with("PORTAFOLIO	FECHA DE CORTE DE LA INFORMACI") {
+                            mode = Mode1::Header1;
+                        } else if input == "EOF\n" {
+                            break;
+                        }
+                    }
+                    Mode1::Header1 => {
+                        if input == "EOF\n" {
+                            break;
+                        } else {
+                            mode = Mode1::Table;
+                        }
+                    }
+                    Mode1::Table => {
+                        if input.starts_with("VALOR TOTAL DEL FONDO	") {
+                            mode = Mode1::Footer;
+                        } else if input == "EOF\n" {
+                            break;
+                        } else {
+                            let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
+                            let fund_str = input_iter.next().unwrap();
+                            let date = chrono::NaiveDate::parse_from_str(
+                                input_iter.next().unwrap(),
+                                "%d / %m / %y",
+                            )
+                            .unwrap();
+                            let fund_value_raw = input_iter.next().unwrap();
+                            let fund_value_str = fund_value_raw.replace(&['$', ','][..], "");
+                            match fund_value_str.parse::<f64>() {
+                                Ok(fund_value_f) => {
+                                    let fund_value = (fund_value_f * 100.0) as i64;
+                                    let unit_value_raw = input_iter.next().unwrap();
+                                    let unit_value_str =
+                                        unit_value_raw.replace(&['$', ','][..], "");
+                                    match unit_value_str.parse::<f64>() {
+                                        Ok(unit_value_f) => {
+                                            let unit_value = (unit_value_f * 100.0) as i64;
+                                            match table
+                                                .table
+                                                .iter_mut()
+                                                .find(|s| s.fund == fund_str)
+                                            {
+                                                Some(series) => {
+                                                    match series
+                                                        .fund_value
+                                                        .iter_mut()
+                                                        .find(|u: &&mut FundValue| u.date == date)
+                                                    {
+                                                        Some(x) => {
+                                                            if x.fund_value != fund_value {
+                                                                errors = format!("{}Warning: Fund {} changing fund_value from {} to {}\n", errors, fund_str, x.fund_value, fund_value);
+                                                                x.fund_value = fund_value;
+                                                            }
+                                                            if x.unit_value != unit_value {
+                                                                errors = format!("{}Warning: Fund {} changing unit_value from {} to {}\n", errors, fund_str, x.unit_value, unit_value);
+                                                                x.unit_value = unit_value;
+                                                            }
+                                                        }
+                                                        None => series.fund_value.push(FundValue {
+                                                            date,
+                                                            fund_value,
+                                                            unit_value,
+                                                        }),
+                                                    }
+                                                }
+                                                None => {
+                                                    table.table.push(Series {
+                                                        fund: String::from(fund_str),
+                                                        balance: Vec::<_>::with_capacity(10),
+                                                        action: Vec::<_>::with_capacity(10),
+                                                        fund_value: vec![FundValue {
+                                                            date,
+                                                            fund_value,
+                                                            unit_value,
+                                                        }],
+                                                    });
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            errors = format!(
+                                                "{}Failed parsing line {}\nfund = {}, unit_value_raw = {}, unit_value_str = {}: {}", errors, input,
+                                                fund_str, unit_value_raw, unit_value_str, e
+                                            );
+                                            errors_produced = true;
+                                        }
+                                    };
+                                }
+                                Err(e) => {
+                                    errors = format!(
+                                        "{}Failed parsing line {}\nfund = {}, fund_value_raw = {}, fund_value_str = {}: {}", errors, input,
+                                        fund_str, fund_value_raw, fund_value_str, e
+                                    );
+                                    errors_produced = true;
+                                }
+                            };
+                        }
+                    }
+                    Mode1::Footer => {
+                        if input.starts_with("Estas rentabilidades no son garant")
+                            || (input == "EOF\n")
+                        {
+                            break;
+                        }
+                    }
+                },
+                Err(error) => println!("Error parsing data: {}", error),
+            }
+        }
+        if !errors.is_empty() {
+            consume_input();
+            print!("{}", errors);
+        }
+        if errors_produced {
+            return;
         }
     }
     let table = table; // Read-only
@@ -458,16 +592,6 @@ fn main() {
         let text2 = ("Calibri", text_size2).into_font().color(color0);
         use plotters::style::text_anchor::{HPos, Pos, VPos};
         let _text2c = text2.pos(Pos::new(HPos::Center, VPos::Top));
-        let figure_file_name = "fondos00.png";
-        let figure_path = std::path::Path::new(&figure_file_name);
-        if figure_path.exists() {
-            panic!(
-                "This program just tried to rewrite {}; please debug",
-                figure_path.to_str().unwrap()
-            );
-        }
-        let drawing_area0 = BitMapBackend::new(figure_path, (1920, 1080)).into_drawing_area();
-        drawing_area0.fill(background_color).unwrap();
         let durations = &[7, 15, 30, 70]; // Days
         let max_duration = durations.iter().max().unwrap();
         let minimum_date = date
@@ -499,209 +623,390 @@ fn main() {
                         a.sort_unstable_by(|a1, a2| a1.date.cmp(&a2.date));
                         a
                     },
-                    fund_value: Vec::<_>::new(),
+                    fund_value: {
+                        let mut f: Vec<_> = series
+                            .fund_value
+                            .iter()
+                            .filter(|fund_value| fund_value.date >= minimum_date)
+                            .cloned()
+                            .collect();
+                        f.sort_unstable_by(|f1, f2| f1.date.cmp(&f2.date));
+                        f
+                    }, //Vec::<_>::new(),
                 })
                 .collect(),
         };
         // dbg!(&table0);
-        drawing_area0
-            .split_evenly((2, columns(durations.len())))
-            .iter()
-            .zip(durations.iter().enumerate())
-            .for_each(|(drawing_area1, (duration_index, duration))| {
-                match date.checked_sub_signed(chrono::Duration::days(*duration)) {
-                    Some(start_naive_date) => {
-                        let start_date = Date::from_utc(start_naive_date, chrono::Utc);
-                        let today_date = Date::from_utc(date, chrono::Utc);
-                        let ranged_date = plotters::coord::RangedDate::from(start_date..today_date);
-                        let (consolidated_balance_i, consolidated_investment_i) = table0
-                            .table
-                            .iter()
-                            .fold((0i64, 0i64), |(accum_balance, accum_investment), series| {
-                                let initial_balance = series
-                                    .balance
-                                    .iter()
-                                    .find(|b| b.date >= start_naive_date)
-                                    .unwrap();
-                                (
-                                    accum_balance + series.balance.last().unwrap().balance,
-                                    accum_investment
-                                        + initial_balance.balance
-                                        + series
+        {
+            let figure_file_name = "fondos00.png";
+            let figure_path = std::path::Path::new(&figure_file_name);
+            if figure_path.exists() {
+                panic!(
+                    "This program just tried to rewrite {}; please debug",
+                    figure_path.to_str().unwrap()
+                );
+            }
+            let drawing_area0 = BitMapBackend::new(figure_path, (1920, 1080)).into_drawing_area();
+            drawing_area0.fill(background_color).unwrap();
+            drawing_area0
+                .split_evenly((2, columns(durations.len())))
+                .iter()
+                .zip(durations.iter().enumerate())
+                .for_each(|(drawing_area1, (duration_index, duration))| {
+                    match date.checked_sub_signed(chrono::Duration::days(*duration)) {
+                        Some(start_naive_date) => {
+                            let start_date = Date::from_utc(start_naive_date, chrono::Utc);
+                            let today_date = Date::from_utc(date, chrono::Utc);
+                            let ranged_date =
+                                plotters::coord::RangedDate::from(start_date..today_date);
+                            let (consolidated_balance_i, consolidated_investment_i) = table0
+                                .table
+                                .iter()
+                                .fold((0i64, 0i64), |(accum_balance, accum_investment), series| {
+                                    match series.balance.iter().find(|b| b.date >= start_naive_date)
+                                    {
+                                        Some(initial_balance) => (
+                                            accum_balance + series.balance.last().unwrap().balance,
+                                            accum_investment
+                                                + initial_balance.balance
+                                                + series
+                                                    .action
+                                                    .iter()
+                                                    .skip_while(|a| a.date < initial_balance.date)
+                                                    .map(|a| a.change)
+                                                    .sum::<i64>(),
+                                        ),
+                                        None => (accum_balance, accum_investment),
+                                    }
+                                });
+                            let consolidated_investment_f64 = consolidated_investment_i as f64;
+                            let consolidated_investment = consolidated_investment_f64 / 100.0;
+                            let consolidated_variation =
+                                consolidated_balance_i as f64 / 100.0 - consolidated_investment;
+                            let consolidated_variation_percent =
+                                100.0 * consolidated_variation / consolidated_investment;
+                            let series_vec: Vec<_> = table0
+                                .table
+                                .iter()
+                                .filter(|series: &&Series| {
+                                    series.balance.iter().any(|b| b.date >= start_naive_date)
+                                })
+                                .map(|series: &Series| PlotSeries {
+                                    fund: series.fund.to_lowercase(),
+                                    variation: {
+                                        let balance_iter = series
+                                            .balance
+                                            .iter()
+                                            .skip_while(|b| b.date < start_naive_date);
+                                        let initial_balance = balance_iter.clone().next().unwrap();
+                                        let initial_balance_f64 = initial_balance.balance as f64;
+                                        let mut action_iter = series
                                             .action
                                             .iter()
-                                            .skip_while(|a| a.date < initial_balance.date)
-                                            .map(|a| a.change)
-                                            .sum::<i64>(),
-                                )
-                            });
-                        let consolidated_investment = consolidated_investment_i as f64 / 100.0;
-                        let consolidated_variation =
-                            consolidated_balance_i as f64 / 100.0 - consolidated_investment;
-                        let consolidated_variation_percent =
-                            100.0 * consolidated_variation / consolidated_investment;
-                        let series_vec: Vec<_> = table0
-                            .table
-                            .iter()
-                            .map(|series| PlotSeries {
-                                fund: series.fund.to_lowercase(),
-                                variation: {
-                                    let balance_iter = series
-                                        .balance
-                                        .iter()
-                                        .skip_while(|b| b.date < start_naive_date);
-                                    let initial_balance = balance_iter.clone().next().unwrap();
-                                    let initial_balance_f64 = initial_balance.balance as f64;
-                                    let mut action_iter = series
-                                        .action
-                                        .iter()
-                                        .skip_while(|a| a.date < initial_balance.date) // skip_while() creates a new iter.
-                                        .peekable();
-                                    balance_iter
-                                        .scan(initial_balance_f64, |running_balance, b| {
-                                            let previous_balance = *running_balance;
-                                            let mut adjusted_current_balance = b.balance;
-                                            #[allow(clippy::while_let_on_iterator)]
-                                            while let Some(action) = action_iter.peek() {
-                                                // skip_while() creates a new iter; do not use in this loop.
-                                                if action.date >= b.date {
-                                                    break;
+                                            .skip_while(|a| a.date < initial_balance.date) // skip_while() creates a new iter.
+                                            .peekable();
+                                        balance_iter
+                                            .scan(initial_balance_f64, |running_balance, b| {
+                                                let mut adjusted_current_balance = b.balance;
+                                                let unadjusted_running_balance_f64 =
+                                                    *running_balance as f64;
+                                                #[allow(clippy::while_let_on_iterator)]
+                                                while let Some(action) = action_iter.peek() {
+                                                    // skip_while() creates a new iter; do not use in this loop.
+                                                    if action.date >= b.date {
+                                                        break;
+                                                    }
+                                                    *running_balance += action.change as f64;
+                                                    adjusted_current_balance -= action.change;
+                                                    action_iter.next();
                                                 }
-                                                *running_balance += action.change as f64;
-                                                adjusted_current_balance -= action.change;
-                                                action_iter.next();
-                                            }
-                                            let variation1 = 100.0
-                                                * adjusted_current_balance as f64
-                                                / previous_balance
-                                                - 100.0;
-                                            let variation2 =
-                                                100.0 * b.balance as f64 / previous_balance - 100.0;
-                                            Some((
-                                                Date::from_utc(b.date, chrono::Utc),
-                                                // b.balance as f64 / *running_balance, // Debug
-                                                if variation1.abs() > variation2.abs() {
-                                                    variation2
-                                                } else {
-                                                    variation1
-                                                },
-                                            ))
-                                        })
-                                        .collect()
-                                },
-                            })
-                            .collect();
-                        let min_variation = series_vec
-                            .iter()
-                            .map(|series| series.variation.iter().map(|a| a.1))
-                            .flatten()
-                            .min_by(|a, b| a.partial_cmp(&b).unwrap())
-                            .unwrap();
-                        let max_variation = series_vec
-                            .iter()
-                            .map(|series| series.variation.iter().map(|a| a.1))
-                            .flatten()
-                            .max_by(|a, b| a.partial_cmp(&b).unwrap())
-                            .unwrap();
-                        let variation_expansion = 0.02 * (max_variation - min_variation);
-                        let variation_range = (min_variation - variation_expansion)
-                            ..(max_variation + variation_expansion);
-                        let mut chart = ChartBuilder::on(&drawing_area1)
-                            .x_label_area_size(x_label_area_size)
-                            .y_label_area_size(if duration_index == 0 {
-                                y_label_area_size0
-                            } else {
-                                y_label_area_size1
-                            })
-                            .margin(figure_margin)
-                            .caption(
-                                format!(
-                                    "{} días (inversión ${:.2}, rendimiento ${:.2} ({:.2}%))",
-                                    duration,
-                                    consolidated_investment,
-                                    consolidated_variation,
-                                    consolidated_variation_percent,
-                                ),
-                                text0.clone(),
-                            )
-                            .build_ranged(ranged_date, variation_range)
-                            .unwrap();
-                        chart
-                            .configure_mesh()
-                            .line_style_1(&color02)
-                            .line_style_2(&color01)
-                            .x_desc("Fecha")
-                            .y_desc(if duration_index == 0 {
-                                "Variación diaria excepto aportes y retiros (%)"
-                            } else {
-                                ""
-                            })
-                            .x_label_formatter(&date_formatter)
-                            .axis_style(color0)
-                            .axis_desc_style(text2.clone())
-                            .label_style(text2.clone())
-                            .draw()
-                            .unwrap();
-                        for (index, series) in series_vec.iter().enumerate() {
-                            chart
-                                .draw_series(LineSeries::new(
-                                    series.variation.clone(),
-                                    color_vec[index].stroke_width(thick_stroke),
-                                ))
+                                                let variation1 = 100.0
+                                                    * adjusted_current_balance as f64
+                                                    / unadjusted_running_balance_f64
+                                                    - 100.0;
+                                                let variation2 = 100.0 * b.balance as f64
+                                                    / *running_balance as f64
+                                                    - 100.0;
+                                                Some((
+                                                    Date::from_utc(b.date, chrono::Utc),
+                                                    if variation1.abs() > variation2.abs() {
+                                                        variation2
+                                                    } else {
+                                                        variation1
+                                                    },
+                                                ))
+                                            })
+                                            .collect()
+                                    },
+                                })
+                                .collect();
+                            let min_variation = series_vec
+                                .iter()
+                                .map(|series| series.variation.iter().map(|a| a.1))
+                                .flatten()
+                                .min_by(|a, b| a.partial_cmp(&b).unwrap())
                                 .unwrap();
-                        }
-                        let mut labels: Vec<_> = series_vec
-                            .iter()
-                            .enumerate()
-                            .map(|(index, series)| Label {
-                                index,
-                                fund: &series.fund,
-                                variation: series.variation.last().unwrap().1,
-                                backend_coord: {
-                                    let mut bc = chart.backend_coord(&(
-                                        start_date,
-                                        series.variation.last().unwrap().1,
-                                    ));
-                                    bc.0 += 20;
-                                    bc
-                                },
-                            })
-                            .collect();
-                        labels
-                            .sort_unstable_by(|p1, p2| p1.backend_coord.1.cmp(&p2.backend_coord.1));
-                        let backend_y_range = (
-                            chart.backend_coord(&(start_date, max_variation)).1,
-                            chart.backend_coord(&(start_date, min_variation)).1
-                                - line_spacing * labels.len() as i32,
-                        );
-                        labels
-                            .iter()
-                            .fold(backend_y_range, |(min_y, max_y), label| {
-                                let mut coord = label.backend_coord;
-                                if coord.1 < min_y {
-                                    coord.1 = min_y;
-                                }
-                                if coord.1 > max_y {
-                                    coord.1 = max_y;
-                                }
-                                drawing_area0
-                                    .draw_text(
-                                        &format!("{} {:.2}%", label.fund, label.variation),
-                                        &("Calibri", text_size1)
-                                            .into_font()
-                                            .color(color_vec[label.index]),
-                                        coord,
-                                    )
+                            let max_variation = series_vec
+                                .iter()
+                                .map(|series| series.variation.iter().map(|a| a.1))
+                                .flatten()
+                                .max_by(|a, b| a.partial_cmp(&b).unwrap())
+                                .unwrap();
+                            let variation_expansion = 0.02 * (max_variation - min_variation);
+                            let variation_range = (min_variation - variation_expansion)
+                                ..(max_variation + variation_expansion);
+                            let mut chart = ChartBuilder::on(&drawing_area1)
+                                .x_label_area_size(x_label_area_size)
+                                .y_label_area_size(if duration_index == 0 {
+                                    y_label_area_size0
+                                } else {
+                                    y_label_area_size1
+                                })
+                                .margin(figure_margin)
+                                .caption(
+                                    format!(
+                                        "{} días (inversión ${:.2}, rendimiento ${:.2} ({:.2}%))",
+                                        duration,
+                                        consolidated_investment,
+                                        consolidated_variation,
+                                        consolidated_variation_percent,
+                                    ),
+                                    text0.clone(),
+                                )
+                                .build_ranged(ranged_date, variation_range)
+                                .unwrap();
+                            chart
+                                .configure_mesh()
+                                .line_style_1(&color02)
+                                .line_style_2(&color01)
+                                .x_desc("Fecha")
+                                .y_desc(if duration_index == 0 {
+                                    "Variación respecto al portafolio inicial (%)"
+                                } else {
+                                    ""
+                                })
+                                .x_label_formatter(&date_formatter)
+                                .axis_style(color0)
+                                .axis_desc_style(text2.clone())
+                                .label_style(text2.clone())
+                                .draw()
+                                .unwrap();
+                            for (index, series) in series_vec.iter().enumerate() {
+                                chart
+                                    .draw_series(LineSeries::new(
+                                        series.variation.clone(),
+                                        color_vec[index].stroke_width(thick_stroke),
+                                    ))
                                     .unwrap();
-                                (coord.1 + line_spacing, max_y + line_spacing)
+                            }
+                            let mut labels: Vec<_> = series_vec
+                                .iter()
+                                .enumerate()
+                                .map(|(index, series)| Label {
+                                    index,
+                                    fund: &series.fund,
+                                    variation: series.variation.last().unwrap().1,
+                                    backend_coord: {
+                                        let mut bc = chart.backend_coord(&(
+                                            start_date,
+                                            series.variation.last().unwrap().1,
+                                        ));
+                                        bc.0 += 20;
+                                        bc
+                                    },
+                                })
+                                .collect();
+                            labels.sort_unstable_by(|p1, p2| {
+                                p1.backend_coord.1.cmp(&p2.backend_coord.1)
                             });
+                            let backend_y_range = (
+                                chart.backend_coord(&(start_date, max_variation)).1,
+                                chart.backend_coord(&(start_date, min_variation)).1
+                                    - line_spacing * labels.len() as i32,
+                            );
+                            labels
+                                .iter()
+                                .fold(backend_y_range, |(min_y, max_y), label| {
+                                    let mut coord = label.backend_coord;
+                                    if coord.1 < min_y {
+                                        coord.1 = min_y;
+                                    }
+                                    if coord.1 > max_y {
+                                        coord.1 = max_y;
+                                    }
+                                    drawing_area0
+                                        .draw_text(
+                                            &format!("{} {:.2}%", label.fund, label.variation),
+                                            &("Calibri", text_size1)
+                                                .into_font()
+                                                .color(color_vec[label.index]),
+                                            coord,
+                                        )
+                                        .unwrap();
+                                    (coord.1 + line_spacing, max_y + line_spacing)
+                                });
+                        }
+                        None => eprintln!(
+                            "Error subtracting duration {} from date {}. Please review the code.",
+                            *duration, date
+                        ),
                     }
-                    None => eprintln!(
-                        "Error subtracting duration {} from date {}. Please review the code.",
-                        *duration, date
-                    ),
-                }
-            });
+                });
+        }
+        // Total fund value
+        {
+            let figure_file_name = "fondos01.png";
+            let figure_path = std::path::Path::new(&figure_file_name);
+            if figure_path.exists() {
+                panic!(
+                    "This program just tried to rewrite {}; please debug",
+                    figure_path.to_str().unwrap()
+                );
+            }
+            let drawing_area0 = BitMapBackend::new(figure_path, (1920, 1080)).into_drawing_area();
+            drawing_area0.fill(background_color).unwrap();
+            drawing_area0
+                .split_evenly((2, columns(durations.len())))
+                .iter()
+                .zip(durations.iter().enumerate())
+                .for_each(|(drawing_area1, (duration_index, duration))| {
+                    match date.checked_sub_signed(chrono::Duration::days(*duration)) {
+                        Some(start_naive_date) => {
+                            let start_date = Date::from_utc(start_naive_date, chrono::Utc);
+                            let today_date = Date::from_utc(date, chrono::Utc);
+                            let ranged_date =
+                                plotters::coord::RangedDate::from(start_date..today_date);
+                            let series_vec: Vec<_> = table0
+                                .table
+                                .iter()
+                                .filter(|series: &&Series| {
+                                    series.fund_value.iter().any(|b| b.date >= start_naive_date)
+                                        && series.balance.iter().any(|b| b.date >= start_naive_date)
+                                })
+                                .map(|series: &Series| PlotSeries {
+                                    fund: series.fund.to_lowercase(),
+                                    variation: {
+                                        let balance_iter = series
+                                            .fund_value
+                                            .iter()
+                                            .skip_while(|b| b.date < start_naive_date);
+                                        let initial_balance_f64 =
+                                            balance_iter.clone().next().unwrap().unit_value as f64;
+                                        balance_iter
+                                            .map(|b| {
+                                                let variation = 100.0 * b.unit_value as f64
+                                                    / initial_balance_f64
+                                                    - 100.0;
+                                                (Date::from_utc(b.date, chrono::Utc), variation)
+                                            })
+                                            .collect()
+                                    },
+                                })
+                                .collect();
+                            let min_variation = series_vec
+                                .iter()
+                                .map(|series| series.variation.iter().map(|a| a.1))
+                                .flatten()
+                                .min_by(|a, b| a.partial_cmp(&b).unwrap())
+                                .unwrap();
+                            let max_variation = series_vec
+                                .iter()
+                                .map(|series| series.variation.iter().map(|a| a.1))
+                                .flatten()
+                                .max_by(|a, b| a.partial_cmp(&b).unwrap())
+                                .unwrap();
+                            let variation_expansion = 0.02 * (max_variation - min_variation);
+                            let variation_range = (min_variation - variation_expansion)
+                                ..(max_variation + variation_expansion);
+                            let mut chart = ChartBuilder::on(&drawing_area1)
+                                .x_label_area_size(x_label_area_size)
+                                .y_label_area_size(if duration_index == 0 {
+                                    y_label_area_size0
+                                } else {
+                                    y_label_area_size1
+                                })
+                                .margin(figure_margin)
+                                .caption(format!("Valor unidad {} días", duration,), text0.clone())
+                                .build_ranged(ranged_date, variation_range)
+                                .unwrap();
+                            chart
+                                .configure_mesh()
+                                .line_style_1(&color02)
+                                .line_style_2(&color01)
+                                .x_desc("Fecha")
+                                .y_desc(if duration_index == 0 {
+                                    "Variación diaria unidad (%)"
+                                } else {
+                                    ""
+                                })
+                                .x_label_formatter(&date_formatter)
+                                .axis_style(color0)
+                                .axis_desc_style(text2.clone())
+                                .label_style(text2.clone())
+                                .draw()
+                                .unwrap();
+                            for (index, series) in series_vec.iter().enumerate() {
+                                chart
+                                    .draw_series(LineSeries::new(
+                                        series.variation.clone(),
+                                        color_vec[index].stroke_width(thick_stroke),
+                                    ))
+                                    .unwrap();
+                            }
+                            let mut labels: Vec<_> = series_vec
+                                .iter()
+                                .enumerate()
+                                .map(|(index, series)| Label {
+                                    index,
+                                    fund: &series.fund,
+                                    variation: series.variation.last().unwrap().1,
+                                    backend_coord: {
+                                        let mut bc = chart.backend_coord(&(
+                                            start_date,
+                                            series.variation.last().unwrap().1,
+                                        ));
+                                        bc.0 += 20;
+                                        bc
+                                    },
+                                })
+                                .collect();
+                            labels.sort_unstable_by(|p1, p2| {
+                                p1.backend_coord.1.cmp(&p2.backend_coord.1)
+                            });
+                            let backend_y_range = (
+                                chart.backend_coord(&(start_date, max_variation)).1,
+                                chart.backend_coord(&(start_date, min_variation)).1
+                                    - line_spacing * labels.len() as i32,
+                            );
+                            labels
+                                .iter()
+                                .fold(backend_y_range, |(min_y, max_y), label| {
+                                    let mut coord = label.backend_coord;
+                                    if coord.1 < min_y {
+                                        coord.1 = min_y;
+                                    }
+                                    if coord.1 > max_y {
+                                        coord.1 = max_y;
+                                    }
+                                    drawing_area0
+                                        .draw_text(
+                                            &format!("{} {:.2}%", label.fund, label.variation),
+                                            &("Calibri", text_size1)
+                                                .into_font()
+                                                .color(color_vec[label.index]),
+                                            coord,
+                                        )
+                                        .unwrap();
+                                    (coord.1 + line_spacing, max_y + line_spacing)
+                                });
+                        }
+                        None => eprintln!(
+                            "Error subtracting duration {} from date {}. Please review the code.",
+                            *duration, date
+                        ),
+                    }
+                });
+        }
     }
     println!("Figures are ready.");
 }
