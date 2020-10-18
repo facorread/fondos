@@ -740,19 +740,32 @@ fn main() {
                                     },
                                 })
                                 .collect();
-                            let min_variation = series_vec
+                            let min_variation = match series_vec
                                 .iter()
                                 .map(|series| series.variation.iter().map(|a| a.1))
                                 .flatten()
                                 .min_by(|a, b| a.partial_cmp(&b).unwrap())
-                                .unwrap();
-                            let max_variation = series_vec
+                            {
+                                Some(v) => v,
+                                None => 100.0,
+                            };
+                            let max_variation = match series_vec
                                 .iter()
                                 .map(|series| series.variation.iter().map(|a| a.1))
                                 .flatten()
                                 .max_by(|a, b| a.partial_cmp(&b).unwrap())
-                                .unwrap();
-                            let variation_expansion = 0.02 * (max_variation - min_variation);
+                            {
+                                Some(v) => v,
+                                None => 100.0,
+                            };
+                            let variation_expansion = {
+                                let variation_expansion = 0.02 * (max_variation - min_variation);
+                                if variation_expansion > 0. {
+                                    variation_expansion
+                                } else {
+                                    1.
+                                }
+                            };
                             let variation_range = (min_variation - variation_expansion)
                                 ..(max_variation + variation_expansion);
                             let mut chart = ChartBuilder::on(&drawing_area1)
@@ -903,19 +916,32 @@ fn main() {
                                     },
                                 })
                                 .collect();
-                            let min_variation = series_vec
+                            let min_variation = match series_vec
                                 .iter()
                                 .map(|series| series.variation.iter().map(|a| a.1))
                                 .flatten()
                                 .min_by(|a, b| a.partial_cmp(&b).unwrap())
-                                .unwrap();
-                            let max_variation = series_vec
+                            {
+                                Some(v) => v,
+                                None => 100.0,
+                            };
+                            let max_variation = match series_vec
                                 .iter()
                                 .map(|series| series.variation.iter().map(|a| a.1))
                                 .flatten()
                                 .max_by(|a, b| a.partial_cmp(&b).unwrap())
-                                .unwrap();
-                            let variation_expansion = 0.02 * (max_variation - min_variation);
+                            {
+                                Some(v) => v,
+                                None => 100.0,
+                            };
+                            let variation_expansion = {
+                                let variation_expansion = 0.02 * (max_variation - min_variation);
+                                if variation_expansion > 0. {
+                                    variation_expansion
+                                } else {
+                                    1.
+                                }
+                            };
                             let variation_range = (min_variation - variation_expansion)
                                 ..(max_variation + variation_expansion);
                             let mut chart = ChartBuilder::on(&drawing_area1)
