@@ -236,11 +236,30 @@ fn main() {
             return;
         }
     }
+    let balance_histories = {
+        let mut balance_histories = String::from("");
+        let mut print_record = |fund: &str, record: &Balance| {
+            balance_histories = format!(
+                "{}{}\t{}\t{}\n",
+                balance_histories, record.date, record.balance, fund
+            )
+        };
+        table.table.iter().for_each(|series| {
+            let mut it = series.balance.iter().rev();
+            if let Some(last_record) = it.next() {
+                if let Some(next_to_last_record) = it.next() {
+                    print_record(&series.fund, next_to_last_record);
+                }
+                print_record(&series.fund, last_record);
+            }
+        });
+        balance_histories
+    };
     // The page "Recomposición de su inversión en su Dafuturo" should not be used by this program because movements between
     // funds take several days to complete. Instead, use fund actions from the "Últimos Movimientos" pages.
     if interactive_run {
         'fund_changes: loop {
-            println!("Paste the 'Ultimos Movimientos' page here.\nEnter EOF when you are done with all pages, or Ctrl + C to close this program:");
+            println!("{}Paste the 'Ultimos Movimientos' page here.\nEnter EOF when you are done with all pages, or Ctrl + C to close this program:", balance_histories);
             let mut mode = Mode::Header;
             let mut errors = String::new();
             let mut errors_produced = false;
