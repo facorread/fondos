@@ -1,12 +1,21 @@
 {
     "cSpell.words": [
         "accum",
+        "bincode",
+        "Calibri",
+        "chrono",
+        "Dafuturo",
         "dataset",
+        "Davivienda",
         "default",
         "default hasher",
         "ffreport",
         "hasher",
         "loglevel",
+        "multiportafolio",
+        "peekable",
+        "Recomposición",
         "tdigest"
-    ]
+    ],
+    "cSpell.language": "en,es"
 }

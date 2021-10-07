@@ -153,103 +153,112 @@ fn main() {
         let mut mode = Mode::Header;
         let mut errors = String::new();
         let mut errors_produced = false;
+        let mut input_err = |message: &str, input, is_error| {
+            if is_error {
+                errors = format!(
+                    "{}{}\n{}", errors, message, input
+                );
+                errors_produced = true;
+            } else {
+                errors = format!(
+                    "{}{}", errors, message
+                );
+            }
+        };
         loop {
             use std::io;
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
-                Ok(_number_of_bytes_read) => match mode {
-                    Mode::Header => {
-                        if input == "Anual**\n" {
-                            mode = Mode::Table;
-                        } else if input == "EOF\n" {
-                            break;
+                Ok(_number_of_bytes_read) => {
+                    let input = input; // Turned into read-only
+                    match mode {
+                        Mode::Header => {
+                            if input == "Anual**\n" {
+                                mode = Mode::Table;
+                            } else if input == "EOF\n" {
+                                break;
+                            }
                         }
-                    }
-                    Mode::Table => {
-                        if input.starts_with("Total ") {
-                            mode = Mode::Footer;
-                        } else if input == "EOF\n" {
-                            break;
-                        } else {
-                            let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
-                            match input_iter.next() {
-                                Some(fund_str) => {
-                                    match input_iter.next() {
-                                        Some(balance_raw) => {
-                                            let balance_str = balance_raw.replace(&['$', ',', ' '][..], "");
-                                            match balance_str.parse::<f64>() {
-                                                Ok(balance_f) => {
-                                                    let balance = (balance_f * 100.0) as i64;
-                                                    match table.table.iter_mut().find(|s| s.fund == fund_str) {
-                                                        Some(series) => {
-                                                            match series
-                                                                .balance
-                                                                .iter_mut()
-                                                                .find(|b: &&mut Balance| b.date == date)
-                                                            {
-                                                                Some(x) => {
-                                                                    if x.balance != balance {
-                                                                        errors = format!("{}Warning: Fund {} changing balance from {} to {}\n", errors, fund_str, x.balance, balance);
-                                                                        x.balance = balance;
+                        Mode::Table => {
+                            if input.starts_with("Total ") {
+                                mode = Mode::Footer;
+                            } else if input == "EOF\n" {
+                                break;
+                            } else {
+                                let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
+                                match input_iter.next() {
+                                    Some(fund_str) => {
+                                        let mut fund_str_err = |message: &str, input, is_error| {
+                                            input_err(&format!("fund_str = {}, {}", fund_str, message), input, is_error);
+                                        };
+                                        match input_iter.next() {
+                                            Some(balance_raw) => {
+                                                let balance_str = balance_raw.replace(&['$', ',', ' '][..], "");
+                                                let mut balance_str_err = |message: &str, input, is_error| {
+                                                    fund_str_err(&format!("balance_raw = {}, balance_str = {}, {}", balance_raw, balance_str, message), input, is_error);
+                                                };
+                                                match balance_str.parse::<f64>() {
+                                                    Ok(balance_f) => {
+                                                        let balance = (balance_f * 100.0) as i64;
+                                                        let mut balance_err = |message: &str, input, is_error| {
+                                                            fund_str_err(&format!("balance_f = {}, balance = {}, {}", balance_f, balance, message), input, is_error);
+                                                        };
+                                                        match table.table.iter_mut().find(|s| s.fund == fund_str) {
+                                                            Some(series) => {
+                                                                match series
+                                                                    .balance
+                                                                    .iter_mut()
+                                                                    .find(|b: &&mut Balance| b.date == date)
+                                                                {
+                                                                    Some(x) => {
+                                                                        if x.balance != balance {
+                                                                            balance_err(&format!("Warning: Fund changing balance from {} to {}", x.balance, balance), input.clone(), false);
+                                                                            x.balance = balance;
+                                                                        }
+                                                                    }
+                                                                    None => {
+                                                                        series.balance.push(Balance { date, balance })
                                                                     }
                                                                 }
-                                                                None => {
-                                                                    series.balance.push(Balance { date, balance })
-                                                                }
+                                                            }
+                                                            None => {
+                                                                table.table.push(Series {
+                                                                    fund: String::from(fund_str),
+                                                                    balance: vec![Balance { date, balance }],
+                                                                    action: Vec::<_>::with_capacity(10),
+                                                                    fund_value: Vec::<_>::with_capacity(10),
+                                                                });
                                                             }
                                                         }
-                                                        None => {
-                                                            table.table.push(Series {
-                                                                fund: String::from(fund_str),
-                                                                balance: vec![Balance { date, balance }],
-                                                                action: Vec::<_>::with_capacity(10),
-                                                                fund_value: Vec::<_>::with_capacity(10),
-                                                            });
-                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        balance_str_err(&format!("error code 66bVN54K: Error parsing balance_f: {}", e), input.clone(), true);
                                                     }
                                                 }
-                                                Err(e) => {
-                                                    errors = format!(
-                                                        "{}Error parsing balance: fund = {}, balance_raw = {}, balance_str = {}, error code 66bVN54K: {}\n{}",
-                                                        errors, fund_str, balance_raw, balance_str, e, input
-                                                    );
-                                                    errors_produced = true;
-                                                }
+                                            }
+                                            None => {
+                                                fund_str_err("error code nG9Y1h3k: Error parsing balance_raw", input.clone(), true);
                                             }
                                         }
-                                        None => {
-                                            errors = format!(
-                                                "{}Error parsing balance_raw: fund = {}, error code nG9Y1h3k: No balance field\n{}",
-                                                errors, fund_str, input
-                                            );
-                                            errors_produced = true;
-                                        }
                                     }
-                                }
-                                None => {
-                                    errors = format!(
-                                        "{}Error parsing fund_str; error code M1xs4YCd\n{}",
-                                        errors, input
-                                    );
-                                    errors_produced = true;
+                                    None => {
+                                        input_err("Error code M1xs4YCd - Error parsing fund_str", input, true);
+                                    }
                                 }
                             }
                         }
-                    }
-                    Mode::Footer => {
-                        if (input
-                            == "Aprenda aquí sobre el producto 	Aprenda aquí sobre el producto\n")
-                            || (input == "EOF\n")
-                        {
-                            break;
+                        Mode::Footer => {
+                            if (input
+                                == "Aprenda aquí sobre el producto 	Aprenda aquí sobre el producto\n")
+                                || (input == "EOF\n")
+                            {
+                                break;
+                            }
                         }
                     }
                 },
                 Err(error) => {
-                    errors = format!(
-                        "{}Error parsing line due to invalid data; error code uL7R8rMC: {}: {}\n", errors, input, error
-                    );
-                    errors_produced = true;
+                    input_err(&format!("Error code Ug7eRN7t - Invalid data: {}", error), input, true);
                 }
             }
         }
@@ -289,11 +298,18 @@ fn main() {
             let mut errors = String::new();
             let mut errors_produced = false;
             let mut repetitions = Vec::<Repetition>::with_capacity(10);
+            let mut input_err = |message: &str, input| {
+                errors = format!(
+                    "{}{}\n{:?}", errors, message, input
+                );
+                errors_produced = true;
+            };
             loop {
                 use std::io;
                 let mut input = String::new();
                 match io::stdin().read_line(&mut input) {
                     Ok(_number_of_bytes_read) => {
+                        let input = input; // Turned into read-only
                         match mode {
                             Mode::Header => {
                                 if input.starts_with(
@@ -313,127 +329,124 @@ fn main() {
                                     let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
                                     match input_iter.next() {
                                         Some(date_str) => {
+                                            let mut date_str_err = |message: &str, input|{
+                                                input_err(&format!("date_str = {}, {}", date_str, message), input);
+                                            };
                                             match chrono::NaiveDate::parse_from_str(
                                                 date_str,
                                                 "%d/%m/%Y",
                                                 ) {
                                                 Ok(date) => {
+                                                    let mut date_err = |message: &str, input|{
+                                                        date_str_err(&format!("date = {}, {}", date, message), input);
+                                                    };
                                                     match input_iter.next() {
                                                         Some(fund_str) => {
+                                                            let mut fund_str_err = |message: &str, input|{
+                                                                date_err(&format!("fund_str = {}, {}", fund_str, message), input);
+                                                            };
                                                             match input_iter.next() {
                                                                 Some(action_str) => {
+                                                                    let mut action_str_err = |message: &str, input|{
+                                                                        fund_str_err(&format!("action_str = {}, {}", action_str, message), input);
+                                                                    };
                                                                     match input_iter.next() {
                                                                         Some(type_str) => {
+                                                                            let mut type_str_err = |message: &str, input|{
+                                                                                action_str_err(&format!("type_str = {}, {}", type_str, message), input);
+                                                                            };
                                                                             match input_iter.next() {
                                                                                 Some(change_raw) => {
                                                                                     let change_str = change_raw.replace(&['$', ',', '\n'][..], "");
-                                                                                    let change_f = match change_str.parse::<f64>() {
-                                                                                        Ok(c) => match action_str {
-                                                                                            "Aporte" | "Aporte por traslado de otro portafolio" => {
-                                                                                                c
-                                                                                            }
-                                                                                            "Aporte por traslado a otro portafolio"
-                                                                                            | "Retiro parcial" => -c,
-                                                                                            _ => {
-                                                                                                errors = format!("{}Error: Action '{}' not recognized. Please review the code.\n", errors, action_str);
-                                                                                                errors_produced = true;
-                                                                                                0.
-                                                                                            }
-                                                                                        },
-                                                                                        Err(e) => {
-                                                                                            errors = format!("{}Error G9tv9Suj in line: Could not parse change_str = '{}' as a number for action {}: {}\n{}", errors, change_str, action_str, e, input);
-                                                                                            errors_produced = true;
-                                                                                            0.
-                                                                                        }
+                                                                                    let mut change_str_err = |message: &str, input|{
+                                                                                        type_str_err(&format!("change_raw = {}, change_str = {}, {}", change_raw, change_str, message), input);
                                                                                     };
-                                                                                    let change = (change_f * 100.0) as i64;
-                                                                                    match table.table.iter().position(|s| s.fund == fund_str) {
-                                                                                        Some(fund_index) => {
-                                                                                            match table.table[fund_index].action.iter().position(
-                                                                                                |a: &Action| a.date == date && a.change == change,
-                                                                                            ) {
-                                                                                                Some(action_index) => {
-                                                                                                    // This can happen frequently. See if this has been counted before.
-                                                                                                    match repetitions.iter_mut().find(
-                                                                                                        |r: &&mut Repetition| {
-                                                                                                            r.fund_index == fund_index
-                                                                                                                && r.action_index == action_index
-                                                                                                        },
-                                                                                                    ) {
-                                                                                                        Some(r) => r.repetition += 1,
-                                                                                                        None => repetitions.push(Repetition {
-                                                                                                            // This push is valid for both completely new actions as well as actions that are already repeated
-                                                                                                            fund_index,
-                                                                                                            action_index,
-                                                                                                            repetition: 1,
-                                                                                                        }),
-                                                                                                    };
+                                                                                    match change_str.parse::<f64>() {
+                                                                                        Ok(change_abs) => {
+                                                                                            let mut change_abs_err = |message: &str, input|{
+                                                                                                change_str_err(&format!("change_abs = {}, {}", change_abs, message), input);
+                                                                                            };
+                                                                                            let change_f = match action_str {
+                                                                                                "Aporte" | "Aporte por traslado de otro portafolio" => {
+                                                                                                    change_abs
                                                                                                 }
-                                                                                                None => table.table[fund_index]
-                                                                                                    .action
-                                                                                                    .push(Action { date, change }),
-                                                                                            }
+                                                                                                "Aporte por traslado a otro portafolio"
+                                                                                                | "Retiro parcial" => -change_abs,
+                                                                                                _ => {
+                                                                                                    change_abs_err(&format!("error code KevkgKt9: Action '{}' not recognized", action_str), input.clone());
+                                                                                                    continue;
+                                                                                                }
+                                                                                            };
+                                                                                            let change = (change_f * 100.0) as i64;
+                                                                                            match table.table.iter().position(|s| s.fund == fund_str) {
+                                                                                                Some(fund_index) => {
+                                                                                                    match table.table[fund_index].action.iter().position(
+                                                                                                        |a: &Action| a.date == date && a.change == change,
+                                                                                                    ) {
+                                                                                                        Some(action_index) => {
+                                                                                                            // This can happen frequently. See if this has been counted before.
+                                                                                                            match repetitions.iter_mut().find(
+                                                                                                                |r: &&mut Repetition| {
+                                                                                                                    r.fund_index == fund_index
+                                                                                                                        && r.action_index == action_index
+                                                                                                                },
+                                                                                                            ) {
+                                                                                                                Some(r) => r.repetition += 1,
+                                                                                                                None => repetitions.push(Repetition {
+                                                                                                                    // This push is valid for both completely new actions as well as actions that are already repeated
+                                                                                                                    fund_index,
+                                                                                                                    action_index,
+                                                                                                                    repetition: 1,
+                                                                                                                }),
+                                                                                                            };
+                                                                                                        }
+                                                                                                        None => table.table[fund_index]
+                                                                                                            .action
+                                                                                                            .push(Action { date, change }),
+                                                                                                    }
+                                                                                                }
+                                                                                                None => {
+                                                                                                    table.table.push(Series {
+                                                                                                        fund: String::from(fund_str),
+                                                                                                        balance: vec![],
+                                                                                                        action: vec![Action { date, change }],
+                                                                                                        fund_value: Vec::<_>::with_capacity(10),
+                                                                                                    });
+                                                                                                }
+                                                                                            };
                                                                                         }
-                                                                                        None => {
-                                                                                            table.table.push(Series {
-                                                                                                fund: String::from(fund_str),
-                                                                                                balance: vec![],
-                                                                                                action: vec![Action { date, change }],
-                                                                                                fund_value: Vec::<_>::with_capacity(10),
-                                                                                            });
+                                                                                        Err(e) => {
+                                                                                            change_str_err(&format!("error code G9tv9Suj: Could not parse change_str: {}", e), input.clone());
                                                                                         }
                                                                                     };
                                                                                 }
                                                                                 None => {
-                                                                                    errors = format!(
-                                                                                        "{}Error parsing change_raw; date_str = {}, date = {}, fund_str = {}, action_str = {}, type_str = {}, error code Vu3W9Eaw\n{}",
-                                                                                        errors, date_str, date, fund_str, action_str, type_str, input
-                                                                                    );
-                                                                                    errors_produced = true;
+                                                                                    type_str_err("error code Vu3W9Eaw: Error parsing change_raw", input.clone());
                                                                                 }
                                                                             }
                                                                         }
                                                                         None => {
-                                                                            errors = format!(
-                                                                                "{}Error parsing type_str; date_str = {}, date = {}, fund_str = {}, action_str = {}, error code T4a6DIuK\n{}",
-                                                                                errors, date_str, date, fund_str, action_str, input
-                                                                            );
-                                                                            errors_produced = true;
+                                                                            action_str_err("error code T4a6DIuK: Error parsing type_str", input.clone());
                                                                         }
                                                                     }
                                                                 }
                                                                 None => {
-                                                                    errors = format!(
-                                                                        "{}Error parsing action_str; date_str = {}, date = {}, fund_str = {}, error code 30JGdhKe\n{}",
-                                                                        errors, date_str, date, fund_str, input
-                                                                    );
-                                                                    errors_produced = true;
+                                                                    fund_str_err("error code 30JGdhKe: Error parsing action_str", input.clone());
                                                                 }
                                                             }
                                                         }
                                                         None => {
-                                                            errors = format!(
-                                                                "{}Error parsing fund_str; date_str = {}, date = {}, error code W55uVkoa:\n{}",
-                                                                errors, date_str, date, input
-                                                            );
-                                                            errors_produced = true;
+                                                            date_err("error code W55uVkoa: Error parsing fund_str", input.clone());
                                                         }
                                                     }
                                                 }
                                                 Err(e) => {
-                                                    errors = format!(
-                                                        "{}Error parsing date; date_str = {}, error code 2Zuj7zXV: {}\n{}",
-                                                        errors, date_str, e, input
-                                                    );
-                                                    errors_produced = true;
+                                                    date_str_err(&format!("error code 2Zuj7zXV: Error parsing date: {}", e), input.clone());
                                                 }
                                             }
                                         }
                                         None => {
-                                            errors = format!(
-                                                "{}Error parsing date_str; error code 2NlbQ264:\n{}", errors, input
-                                            );
-                                            errors_produced = true;
+                                            input_err("Error code 2NlbQ264: Error parsing date_str", input);
                                         }
                                     }
                                 }
@@ -448,10 +461,7 @@ fn main() {
                         }
                     }
                     Err(error) => {
-                        errors = format!(
-                            "{}Error parsing line due to invalid data; error code Ug7eRN7t: {}: {}\n", errors, input, error
-                        );
-                        errors_produced = true;
+                        input_err(&format!("Error code Ug7eRN7t - Invalid data: {}", error), input);
                     }
                 }
             }
@@ -479,167 +489,179 @@ fn main() {
         let mut mode = Mode1::Header;
         let mut errors = String::new();
         let mut errors_produced = false;
+        let mut input_err = |message: &str, input, is_error| {
+            if is_error {
+                errors = format!(
+                    "{}{}\n{}", errors, message, input
+                );
+                errors_produced = true;
+            } else {
+                errors = format!(
+                    "{}{}", errors, message
+                );
+            }
+        };
         loop {
             use std::io;
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
-                Ok(_number_of_bytes_read) => match mode {
-                    Mode1::Header => {
-                        if input.starts_with("PORTAFOLIO 	FECHA DE CORTE DE LA INFORMACI") {
-                            mode = Mode1::SkipSubHeader;
-                        } else if input == "EOF\n" {
-                            break;
+                Ok(_number_of_bytes_read) => {
+                    let input = input; // Turned into read-only
+                    match mode {
+                        Mode1::Header => {
+                            if input.starts_with("PORTAFOLIO 	FECHA DE CORTE DE LA INFORMACI") {
+                                mode = Mode1::SkipSubHeader;
+                            } else if input == "EOF\n" {
+                                break;
+                            }
                         }
-                    }
-                    Mode1::SkipSubHeader => {
-                        if input == "EOF\n" {
-                            break;
-                        } else {
-                            mode = Mode1::Table;
+                        Mode1::SkipSubHeader => {
+                            if input == "EOF\n" {
+                                break;
+                            } else {
+                                mode = Mode1::Table;
+                            }
                         }
-                    }
-                    Mode1::Table => {
-                        if input.starts_with("VALOR TOTAL DEL FONDO ") {
-                            println!("Moving to Footer");
-                            mode = Mode1::Footer;
-                        } else if input == "EOF\n" {
-                            break;
-                        } else {
-                            let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
-                            match input_iter.next() {
-                                Some(fund_str) => {
-                                    match input_iter.next() {
-                                        Some(date_str) => {
-                                            match chrono::NaiveDate::parse_from_str(
-                                                date_str,
-                                                "%d / %m / %y ",
-                                                ) {
-                                                Ok(date) => {
-                                                    match input_iter.next() {
-                                                        Some(fund_value_raw) => {
-                                                            let fund_value_str = fund_value_raw.replace(&['$', ',', ' '][..], "");
-                                                            match fund_value_str.parse::<f64>() {
-                                                                Ok(fund_value_f) => {
-                                                                    let fund_value = (fund_value_f * 100.0) as i64;
-                                                                    match input_iter.next() {
-                                                                        Some(unit_value_raw) => {
-                                                                            let unit_value_str =
-                                                                                unit_value_raw.replace(&['$', ',', ' '][..], "");
-                                                                            match unit_value_str.parse::<f64>() {
-                                                                                Ok(unit_value_f) => {
-                                                                                    let unit_value = (unit_value_f * 100.0) as i64;
-                                                                                    match table
-                                                                                        .table
-                                                                                        .iter_mut()
-                                                                                        .find(|s| s.fund == fund_str)
-                                                                                    {
-                                                                                        Some(series) => {
-                                                                                            match series
-                                                                                                .fund_value
-                                                                                                .iter_mut()
-                                                                                                .find(|u: &&mut FundValue| u.date == date)
-                                                                                            {
-                                                                                                Some(x) => {
-                                                                                                    if x.fund_value != fund_value {
-                                                                                                        errors = format!("{}Warning: Fund {} changing fund_value from {} to {}\n", errors, fund_str, x.fund_value, fund_value);
-                                                                                                        x.fund_value = fund_value;
+                        Mode1::Table => {
+                            if input.starts_with("VALOR TOTAL DEL FONDO ") {
+                                println!("Moving to Footer");
+                                mode = Mode1::Footer;
+                            } else if input == "EOF\n" {
+                                break;
+                            } else {
+                                let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
+                                match input_iter.next() {
+                                    Some(fund_str) => {
+                                        let mut fund_str_err = |message: &str, input, is_error| {
+                                            input_err(&format!("fund_str = {}, {}", fund_str, message), input, is_error);
+                                        };
+                                        match input_iter.next() {
+                                            Some(date_str) => {
+                                                let mut date_str_err = |message: &str, input, is_error| {
+                                                    fund_str_err(&format!("date_str = {}, {}", date_str, message), input, is_error);
+                                                };
+                                                match chrono::NaiveDate::parse_from_str(
+                                                    date_str,
+                                                    "%d / %m / %y ",
+                                                    ) {
+                                                    Ok(date) => {
+                                                        let mut date_err = |message: &str, input, is_error| {
+                                                            date_str_err(&format!("date = {}, {}", date, message), input, is_error);
+                                                        };
+                                                        match input_iter.next() {
+                                                            Some(fund_value_raw) => {
+                                                                let fund_value_str = fund_value_raw.replace(&['$', ',', ' '][..], "");
+                                                                let mut fund_value_str_err = |message: &str, input, is_error| {
+                                                                    date_err(&format!("fund_value_raw = {}, fund_value_str = {}, {}", fund_value_raw, fund_value_str, message), input, is_error);
+                                                                };
+                                                                match fund_value_str.parse::<f64>() {
+                                                                    Ok(fund_value_f) => {
+                                                                        let fund_value = (fund_value_f * 100.0) as i64;
+                                                                        let mut fund_value_err = |message: &str, input, is_error| {
+                                                                            fund_value_str_err(&format!("fund_value_f = {}, fund_value = {}, {}", fund_value_f, fund_value, message), input, is_error);
+                                                                        };
+                                                                        match input_iter.next() {
+                                                                            Some(unit_value_raw) => {
+                                                                                let unit_value_str = unit_value_raw.replace(&['$', ',', ' '][..], "");
+                                                                                let mut unit_value_str_err = |message: &str, input, is_error| {
+                                                                                    fund_value_err(&format!("unit_value_raw = {}, unit_value_str = {}, {}", unit_value_raw, unit_value_str, message), input, is_error);
+                                                                                };
+                                                                                match unit_value_str.parse::<f64>() {
+                                                                                    Ok(unit_value_f) => {
+                                                                                        let unit_value = (unit_value_f * 100.0) as i64;
+                                                                                        let mut unit_value_err = |message: &str, input, is_error| {
+                                                                                            unit_value_str_err(&format!("unit_value_f = {}, unit_value = {}, {}", unit_value_f, unit_value, message), input, is_error);
+                                                                                        };
+                                                                                        match table
+                                                                                            .table
+                                                                                            .iter_mut()
+                                                                                            .find(|s| s.fund == fund_str)
+                                                                                        {
+                                                                                            Some(series) => {
+                                                                                                match series
+                                                                                                    .fund_value
+                                                                                                    .iter_mut()
+                                                                                                    .find(|u: &&mut FundValue| u.date == date)
+                                                                                                {
+                                                                                                    Some(x) => {
+                                                                                                        if x.fund_value != fund_value {
+                                                                                                            unit_value_err(&format!("Warning: Fund changing fund_value from {} to {}", x.fund_value, fund_value), input.clone(), false);
+                                                                                                            x.fund_value = fund_value;
+                                                                                                        }
+                                                                                                        if x.unit_value != unit_value {
+                                                                                                            unit_value_err(&format!("Warning: Fund changing unit_value from {} to {}", x.unit_value, unit_value), input.clone(), false);
+                                                                                                            x.unit_value = unit_value;
+                                                                                                        }
                                                                                                     }
-                                                                                                    if x.unit_value != unit_value {
-                                                                                                        errors = format!("{}Warning: Fund {} changing unit_value from {} to {}\n", errors, fund_str, x.unit_value, unit_value);
-                                                                                                        x.unit_value = unit_value;
-                                                                                                    }
+                                                                                                    None => series.fund_value.push(FundValue {
+                                                                                                        date,
+                                                                                                        fund_value,
+                                                                                                        unit_value,
+                                                                                                    }),
                                                                                                 }
-                                                                                                None => series.fund_value.push(FundValue {
-                                                                                                    date,
-                                                                                                    fund_value,
-                                                                                                    unit_value,
-                                                                                                }),
+                                                                                            }
+                                                                                            None => {
+                                                                                                table.table.push(Series {
+                                                                                                    fund: String::from(fund_str),
+                                                                                                    balance: Vec::<_>::with_capacity(10),
+                                                                                                    action: Vec::<_>::with_capacity(10),
+                                                                                                    fund_value: vec![FundValue {
+                                                                                                        date,
+                                                                                                        fund_value,
+                                                                                                        unit_value,
+                                                                                                    }],
+                                                                                                });
                                                                                             }
                                                                                         }
-                                                                                        None => {
-                                                                                            table.table.push(Series {
-                                                                                                fund: String::from(fund_str),
-                                                                                                balance: Vec::<_>::with_capacity(10),
-                                                                                                action: Vec::<_>::with_capacity(10),
-                                                                                                fund_value: vec![FundValue {
-                                                                                                    date,
-                                                                                                    fund_value,
-                                                                                                    unit_value,
-                                                                                                }],
-                                                                                            });
-                                                                                        }
                                                                                     }
-                                                                                }
-                                                                                Err(e) => {
-                                                                                    errors = format!(
-                                                                                        "{}Error parsing line; fund = {}, unit_value_raw = {}, unit_value_str = {}, error code 0Rb67Jut: {}\n{}",
-                                                                                        errors, fund_str, unit_value_raw, unit_value_str, e, input
-                                                                                    );
-                                                                                    errors_produced = true;
-                                                                                }
-                                                                            };
-                                                                        }
-                                                                        None => {
-                                                                            errors = format!(
-                                                                                "{}Error parsing unit_value_raw; fund = {}, date_str = {}, date = {}, fund_value_raw = {}, fund_value_str = {}, fund_value_f = {}, error code 4j1BTEnT:\n{}",
-                                                                                errors, fund_str, date_str, date, fund_value_raw, fund_value_str, fund_value_f, input
-                                                                            );
-                                                                            errors_produced = true;
+                                                                                    Err(e) => {
+                                                                                        unit_value_str_err(&format!("Error code 0Rb67Jut: Error parsing unit_value_f: {}", e), input.clone(), true);
+                                                                                    }
+                                                                                };
+                                                                            }
+                                                                            None => {
+                                                                                fund_value_err("error code 4j1BTEnT: Error parsing unit_value_raw", input.clone(), true);
+                                                                            }
                                                                         }
                                                                     }
-                                                                }
-                                                                Err(e) => {
-                                                                    errors = format!(
-                                                                        "{}Error parsing fund_value_f; fund = {}, date_str = {}, date = {}, fund_value_raw = {}, fund_value_str = {}, error code eA99hBWu: {}\n{}",
-                                                                        errors, fund_str, date_str, date, fund_value_raw, fund_value_str, e, input
-                                                                    );
-                                                                    errors_produced = true;
-                                                                }
-                                                            };
-                                                        }
-                                                        None => {
-                                                            errors = format!(
-                                                                "{}Error parsing fund_value_raw; fund = {}, date_str = {}, date = {}, error code Yh34EUqI:\n{}",
-                                                                errors, fund_str, date_str, date, input
-                                                            );
-                                                            errors_produced = true;
+                                                                    Err(e) => {
+                                                                        fund_value_str_err(&format!("Error code eA99hBWu: Error parsing fund_value_f: {}", e), input.clone(), true);
+                                                                    }
+                                                                };
+                                                            }
+                                                            None => {
+                                                                date_err("error code Yh34EUqI: Error parsing fund_value_raw", input.clone(), true);
+                                                            }
                                                         }
                                                     }
-                                                }
-                                                Err(e) => {
-                                                    errors = format!(
-                                                        "{}Error parsing date; fund = {}, date_str = {}, error code 4BrJKI0R: {}\n{}",
-                                                        errors, fund_str, date_str, e, input
-                                                    );
-                                                    errors_produced = true;
+                                                    Err(e) => {
+                                                        date_str_err(&format!("Error code 4BrJKI0R: Error parsing date: {}", e), input.clone(), true);
+                                                    }
                                                 }
                                             }
-                                        }
-                                        None => {
-                                            errors = format!(
-                                                "{}Error parsing date_str; fund = {}, error code 7v683sZZ:\n{}",
-                                                errors, fund_str, input
-                                            );
-                                            errors_produced = true;
+                                            None => {
+                                                fund_str_err("error code 7v683sZZ: Error parsing date_str", input.clone(), true);
+                                            }
                                         }
                                     }
-                                }
-                                None => {
-                                    errors = format!("{}Error parsing line; error code 2Un6ueyb:\n{}", errors, input);
-                                    errors_produced = true;
+                                    None => {
+                                        input_err("Error code ZkX15XLd - Error parsing fund_str", input, true);
+                                    }
                                 }
                             }
                         }
-                    }
-                    Mode1::Footer => {
-                        if input.starts_with("    Estas rentabilidades no son garant")
-                            || (input == "EOF\n")
-                        {
-                            break;
+                        Mode1::Footer => {
+                            if input.starts_with("    Estas rentabilidades no son garant")
+                                || (input == "EOF\n")
+                            {
+                                break;
+                            }
                         }
                     }
-                },
-                Err(error) => println!("Error parsing data: {}", error),
+                }
+                Err(error) => {
+                    input_err(&format!("Error code sEU78wPj - Invalid data: {}", error), input, true);
+                }
             }
         }
         if !errors.is_empty() {
