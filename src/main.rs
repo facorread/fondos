@@ -84,7 +84,7 @@ struct Label<'label_lifetime> {
     /// Variation over the full range of dates
     variation: f64,
     /// coordinate in the backend system (pixels)
-    backend_coord: plotters::drawing::backend::BackendCoord,
+    backend_coord: plotters_backend::BackendCoord,
 }
 
 #[derive(Clone, Debug, Deserialize, Hash, Serialize)]
@@ -180,7 +180,7 @@ fn main() {
                             }
                         }
                         Mode::Table => {
-                            if input.starts_with("Total ") {
+                            if input.starts_with("Total	") {
                                 mode = Mode::Footer;
                             } else if input == "EOF\n" {
                                 break;
@@ -249,7 +249,7 @@ fn main() {
                         }
                         Mode::Footer => {
                             if (input
-                                == "Aprenda aquí sobre el producto 	Aprenda aquí sobre el producto\n")
+                                == "Aprenda aquí sobre el producto	Aprenda aquí sobre el producto\n")
                                 || (input == "EOF\n")
                             {
                                 break;
@@ -312,9 +312,7 @@ fn main() {
                         let input = input; // Turned into read-only
                         match mode {
                             Mode::Header => {
-                                if input.starts_with(
-                                    "Fecha	Nombre del multiportafolio	Movimiento	Tipo Aporte	Valor",
-                                ) {
+                                if input.starts_with("Fecha	Nombre del ") {
                                     mode = Mode::Table;
                                 } else if input == "EOF\n" {
                                     break 'fund_changes;
@@ -743,8 +741,18 @@ fn main() {
         let color7 = &plotters::style::RGBColor(158, 138, 227);
         let color8 = &plotters::style::RGBColor(134, 202, 217);
         let color9 = &plotters::style::RGBColor(0, 199, 196);
+        let color10 = &plotters::style::RGBColor(128, 128, 128);
+        let color11 = &plotters::style::RGBColor(160, 130, 0);
+        let color12 = &plotters::style::RGBColor(0, 140, 60);
+        let color13 = &plotters::style::RGBColor(80, 103, 67);
+        let color14 = &plotters::style::RGBColor(145, 143, 86);
+        let color15 = &plotters::style::RGBColor(89, 56, 15);
+        let color16 = &plotters::style::RGBColor(100, 53, 53);
+        let color17 = &plotters::style::RGBColor(78, 100, 157);
+        let color18 = &plotters::style::RGBColor(78, 144, 188);
+        let color19 = &plotters::style::RGBColor(0, 110, 140);
         let color_vec = vec![
-            color0, color1, color2, color3, color4, color5, color6, color7, color8, color9,
+            color0, color1, color2, color3, color4, color5, color6, color7, color8, color9, color10, color11, color12, color13, color14, color15, color16, color17, color18, color19
         ];
         let fill0 = color0.filled();
         let _fill01 = color01.filled();
@@ -843,7 +851,7 @@ fn main() {
                             let start_date = Date::from_utc(start_naive_date, chrono::Utc);
                             let today_date = Date::from_utc(date, chrono::Utc);
                             let ranged_date =
-                                plotters::coord::RangedDate::from(start_date..today_date);
+                                plotters::coord::types::RangedDate::from(start_date..today_date);
                             let (consolidated_balance_i, consolidated_investment_i) = table0
                                 .table
                                 .iter()
@@ -971,12 +979,12 @@ fn main() {
                                     ),
                                     text0.clone(),
                                 )
-                                .build_ranged(ranged_date, variation_range)
+                                .build_cartesian_2d(ranged_date, variation_range)
                                 .unwrap();
                             chart
                                 .configure_mesh()
-                                .line_style_1(&color02)
-                                .line_style_2(&color01)
+                                .bold_line_style(&color02)
+                                .light_line_style(&color01)
                                 .x_desc("Fecha")
                                 .y_desc(if duration_index == 0 {
                                     "Variación respecto al portafolio inicial (%)"
@@ -1073,7 +1081,7 @@ fn main() {
                             let start_date = Date::from_utc(start_naive_date, chrono::Utc);
                             let today_date = Date::from_utc(date, chrono::Utc);
                             let ranged_date =
-                                plotters::coord::RangedDate::from(start_date..today_date);
+                                plotters::coord::types::RangedDate::from(start_date..today_date);
                             let series_vec: Vec<_> = table0
                                 .table
                                 .iter()
@@ -1138,12 +1146,12 @@ fn main() {
                                 })
                                 .margin(figure_margin)
                                 .caption(format!("Valor unidad {} días", duration,), text0.clone())
-                                .build_ranged(ranged_date, variation_range)
+                                .build_cartesian_2d(ranged_date, variation_range)
                                 .unwrap();
                             chart
                                 .configure_mesh()
-                                .line_style_1(&color02)
-                                .line_style_2(&color01)
+                                .bold_line_style(&color02)
+                                .light_line_style(&color01)
                                 .x_desc("Fecha")
                                 .y_desc(if duration_index == 0 {
                                     "Variación diaria unidad (%)"
