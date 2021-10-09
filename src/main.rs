@@ -39,18 +39,8 @@ struct Balance {
 }
 
 #[derive(Clone, Debug, Deserialize, Hash, Serialize)]
-/// Represents a record of whole fund value and unit value.
-struct FundValue {
-    date: chrono::NaiveDate,
-    /// Value of the whole fund, expressed in cents. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    fund_value: i64,
-    /// Value of a fund unit, expressed in cents. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    unit_value: i64,
-}
-
-#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
 /// Represents a record of whole fund value, unit value, and returns on equity.
-struct FundValueNew {
+struct FundValue {
     date: chrono::NaiveDate,
     /// Value of the whole fund, expressed in cents. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
     fund_value: i64,
@@ -78,27 +68,6 @@ struct FundValueNew {
     roe_2_years: i64,
     /// Return on equity from the beginning of the fund, expressed in cents. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
     roe_total: i64,
-}
-
-impl From<FundValue> for FundValueNew {
-    fn from(rhs: FundValue) -> Self {
-        Self {
-            date: rhs.date,
-            fund_value: rhs.fund_value,
-            unit_value: rhs.unit_value,
-            roe_next_to_last_year: 0,
-            roe_last_year: 0,
-            roe_year_to_date: 0,
-            roe_day: 0,
-            roe_day_annualized: 0,
-            roe_month: 0,
-            roe_trimester: 0,
-            roe_semester: 0,
-            roe_year: 0,
-            roe_2_years: 0,
-            roe_total: 0,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Hash, Serialize)]
@@ -148,25 +117,6 @@ struct Series {
     fund_value: Vec<FundValue>,
 }
 
-#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
-struct SeriesNew {
-    fund: String,
-    balance: Vec<Balance>,
-    action: Vec<Action>,
-    fund_value: Vec<FundValueNew>,
-}
-
-impl From<Series> for SeriesNew {
-    fn from(rhs: Series) -> Self {
-        Self {
-            fund: rhs.fund,
-            balance: rhs.balance,
-            action: rhs.action,
-            fund_value: rhs.fund_value.into_iter().map(|f| FundValueNew::from(f)).collect(),
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 struct PlotSeries {
     fund: String,
@@ -177,20 +127,6 @@ struct PlotSeries {
 struct Table {
     // List of time series, in the same order than self.fund
     table: Vec<Series>,
-}
-
-#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
-struct TableNew {
-    // List of time series, in the same order than self.fund
-    table: Vec<SeriesNew>,
-}
-
-impl From<Table> for TableNew {
-    fn from(rhs: Table) -> Self {
-        Self {
-            table: rhs.table.into_iter().map(|s| SeriesNew::from(s)).collect(),
-        }
-    }
 }
 
 fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
@@ -218,7 +154,7 @@ fn main() {
     use plotters::prelude::*;
     use std::fs;
     // Useful for debugging on vscode.
-    let interactive_run = false;
+    let interactive_run = true;
     let date = chrono::Local::today().naive_local();
     let funds_file_name = "funds.dat";
     let r_err = &*format!("Error reading the file {}", funds_file_name);
@@ -759,7 +695,7 @@ fn main() {
     let table = table; // Read-only
                        // dbg!(&table);
                        // return;
-    if false {
+    if calculate_hash(&table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
     } else {
         println!("Creating new funds file...");
@@ -768,8 +704,7 @@ fn main() {
         {
             let new_err = &*format!("Error writing to temporary file {}", funds_file_name);
             let new_file = fs::File::create(new_path).expect(new_err);
-            let table_new = TableNew::from(table.clone());
-            bincode::serialize_into(new_file, &table_new).expect(new_err);
+            bincode::serialize_into(new_file, &table).expect(new_err);
         }
         if db_path.exists() {
             let backup_file_name = format!(
