@@ -16,6 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use serde::{Deserialize, Serialize};
+use std::io::Write as IoWrite;
 
 enum Mode {
     Header,
@@ -27,6 +28,8 @@ enum Mode1 {
     Header,
     SkipSubHeader,
     Table,
+    Intermission,
+    Table1,
     Footer,
 }
 
@@ -46,28 +49,6 @@ struct FundValue {
     fund_value: i64,
     /// Value of a fund unit, expressed in cents. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
     unit_value: i64,
-    /// Return on equity for next-to-last year, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_next_to_last_year: i64,
-    /// Return on equity for last year, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_last_year: i64,
-    /// Return on equity for year to date, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_year_to_date: i64,
-    /// Return on equity for today, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_day: i64,
-    /// Return on equity for today, annualized, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_day_annualized: i64,
-    /// Return on equity for the last month, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_month: i64,
-    /// Return on equity for the last trimester, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_trimester: i64,
-    /// Return on equity for the last semester, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_semester: i64,
-    /// Return on equity for the last year, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_year: i64,
-    /// Return on equity for the last 2 years, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_2_years: i64,
-    /// Return on equity from the beginning of the fund, expressed in parts per 100000. u32 is insufficient to represent large sums. f64 cannot be hashed. u64 is a hassle for working with Actions.
-    roe_total: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Hash, Serialize)]
@@ -129,6 +110,34 @@ struct Table {
     table: Vec<Series>,
 }
 
+#[derive(Clone, Debug)]
+/// A cumulative record of fund performance, to be stored in funds.csv.
+struct FundCuml {
+    fund: String,
+    /// Return on equity for next-to-last year, expressed in percentage.
+    roe_next_to_last_year: f64,
+    /// Return on equity for last year, expressed in percentage.
+    roe_last_year: f64,
+    /// Return on equity for year to date, expressed in percentage.
+    roe_year_to_date: f64,
+    /// Return on equity for today, expressed in percentage.
+    roe_day: f64,
+    /// Return on equity for today, annualized, expressed in percentage.
+    roe_day_annualized: f64,
+    /// Return on equity for the last month, expressed in percentage.
+    roe_month: f64,
+    /// Return on equity for the last trimester, expressed in percentage.
+    roe_trimester: f64,
+    /// Return on equity for the last semester, expressed in percentage.
+    roe_semester: f64,
+    /// Return on equity for the last year, expressed in percentage.
+    roe_year: f64,
+    /// Return on equity for the last 2 years, expressed in percentage.
+    roe_2_years: f64,
+    /// Return on equity from the beginning of the fund, expressed in percentage.
+    roe_total: f64,
+}
+
 fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
     use std::hash::Hasher;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -170,6 +179,7 @@ fn main() {
         }
     };
     let original_hash = calculate_hash(&table);
+    let mut table_cuml: Vec<FundCuml> = Vec::new();
     if interactive_run {
         println!("Paste the account status here.\nEnter EOF if you have no data, or Ctrl + C to close this program:");
         let mut mode = Mode::Header;
@@ -544,8 +554,7 @@ fn main() {
                         }
                         Mode1::Table => {
                             if input.starts_with("VALOR TOTAL DEL FONDO ") {
-                                println!("Moving to Footer");
-                                mode = Mode1::Footer;
+                                mode = Mode1::Intermission;
                             } else if input == "EOF\n" {
                                 break;
                             } else {
@@ -610,10 +619,9 @@ fn main() {
                                                                                                                             roe_next_to_last_year_raw_err(&format!("roe_next_to_last_year_str = {}, {}", roe_next_to_last_year_str, message), input, is_error);
                                                                                                                         };
                                                                                                                         match roe_next_to_last_year_str.parse::<f64>() {
-                                                                                                                            Ok(roe_next_to_last_year_f) => {
-                                                                                                                                let roe_next_to_last_year = (roe_next_to_last_year_f * 1000.0) as i64;
+                                                                                                                            Ok(roe_next_to_last_year) => {
                                                                                                                                 let mut roe_next_to_last_year_err = |message: &str, input, is_error| {
-                                                                                                                                    roe_next_to_last_year_str_err(&format!("roe_next_to_last_year_f = {}, roe_next_to_last_year = {}, {}", roe_next_to_last_year_f, roe_next_to_last_year, message), input, is_error);
+                                                                                                                                    roe_next_to_last_year_str_err(&format!("roe_next_to_last_year = {}, {}", roe_next_to_last_year, message), input, is_error);
                                                                                                                                 };
                                                                                                                                 match input_iter.next() {
                                                                                                                                     Some(mut roe_last_year_raw) => {
@@ -629,10 +637,9 @@ fn main() {
                                                                                                                                                     roe_last_year_raw_err(&format!("roe_last_year_str = {}, {}", roe_last_year_str, message), input, is_error);
                                                                                                                                                 };
                                                                                                                                                 match roe_last_year_str.parse::<f64>() {
-                                                                                                                                                    Ok(roe_last_year_f) => {
-                                                                                                                                                        let roe_last_year = (roe_last_year_f * 1000.0) as i64;
+                                                                                                                                                    Ok(roe_last_year) => {
                                                                                                                                                         let mut roe_last_year_err = |message: &str, input, is_error| {
-                                                                                                                                                            roe_last_year_str_err(&format!("roe_last_year_f = {}, roe_last_year = {}, {}", roe_last_year_f, roe_last_year, message), input, is_error);
+                                                                                                                                                            roe_last_year_str_err(&format!("roe_last_year = {}, {}", roe_last_year, message), input, is_error);
                                                                                                                                                         };
                                                                                                                                                         match input_iter.next() {
                                                                                                                                                             Some(mut roe_year_to_date_raw) => {
@@ -648,10 +655,9 @@ fn main() {
                                                                                                                                                                             roe_year_to_date_raw_err(&format!("roe_year_to_date_str = {}, {}", roe_year_to_date_str, message), input, is_error);
                                                                                                                                                                         };
                                                                                                                                                                         match roe_year_to_date_str.parse::<f64>() {
-                                                                                                                                                                            Ok(roe_year_to_date_f) => {
-                                                                                                                                                                                let roe_year_to_date = (roe_year_to_date_f * 1000.0) as i64;
+                                                                                                                                                                            Ok(roe_year_to_date) => {
                                                                                                                                                                                 let mut roe_year_to_date_err = |message: &str, input, is_error| {
-                                                                                                                                                                                    roe_year_to_date_str_err(&format!("roe_year_to_date_f = {}, roe_year_to_date = {}, {}", roe_year_to_date_f, roe_year_to_date, message), input, is_error);
+                                                                                                                                                                                    roe_year_to_date_str_err(&format!("roe_year_to_date = {}, {}", roe_year_to_date, message), input, is_error);
                                                                                                                                                                                 };
                                                                                                                                                                                 match table
                                                                                                                                                                                     .table
@@ -674,22 +680,13 @@ fn main() {
                                                                                                                                                                                                     x.unit_value = unit_value;
                                                                                                                                                                                                 }
                                                                                                                                                                                             }
-                                                                                                                                                                                            None => series.fund_value.push(FundValue {
-                                                                                                                                                                                                date,
-                                                                                                                                                                                                fund_value,
-                                                                                                                                                                                                unit_value,
-                                                                                                                                                                                                roe_next_to_last_year,
-                                                                                                                                                                                                roe_last_year,
-                                                                                                                                                                                                roe_year_to_date,
-                                                                                                                                                                                                roe_day: 0,
-                                                                                                                                                                                                roe_day_annualized: 0,
-                                                                                                                                                                                                roe_month: 0,
-                                                                                                                                                                                                roe_trimester: 0,
-                                                                                                                                                                                                roe_semester: 0,
-                                                                                                                                                                                                roe_year: 0,
-                                                                                                                                                                                                roe_2_years: 0,
-                                                                                                                                                                                                roe_total: 0,
-                                                                                                                                                                                            }),
+                                                                                                                                                                                            None => {
+                                                                                                                                                                                                series.fund_value.push(FundValue {
+                                                                                                                                                                                                    date,
+                                                                                                                                                                                                    fund_value,
+                                                                                                                                                                                                    unit_value,
+                                                                                                                                                                                                })
+                                                                                                                                                                                            },
                                                                                                                                                                                         }
                                                                                                                                                                                     }
                                                                                                                                                                                     None => {
@@ -701,29 +698,33 @@ fn main() {
                                                                                                                                                                                                 date,
                                                                                                                                                                                                 fund_value,
                                                                                                                                                                                                 unit_value,
-                                                                                                                                                                                                roe_next_to_last_year,
-                                                                                                                                                                                                roe_last_year,
-                                                                                                                                                                                                roe_year_to_date,
-                                                                                                                                                                                                roe_day: 0,
-                                                                                                                                                                                                roe_day_annualized: 0,
-                                                                                                                                                                                                roe_month: 0,
-                                                                                                                                                                                                roe_trimester: 0,
-                                                                                                                                                                                                roe_semester: 0,
-                                                                                                                                                                                                roe_year: 0,
-                                                                                                                                                                                                roe_2_years: 0,
-                                                                                                                                                                                                roe_total: 0,
                                                                                                                                                                                             }],
                                                                                                                                                                                         });
                                                                                                                                                                                     }
                                                                                                                                                                                 }
+                                                                                                                                                                                table_cuml.push(FundCuml {
+                                                                                                                                                                                    fund: String::from(fund_str),
+                                                                                                                                                                                    roe_next_to_last_year,
+                                                                                                                                                                                    roe_last_year,
+                                                                                                                                                                                    roe_year_to_date,
+                                                                                                                                                                                    roe_day: 0.,
+                                                                                                                                                                                    roe_day_annualized: 0.,
+                                                                                                                                                                                    roe_month: 0.,
+                                                                                                                                                                                    roe_trimester: 0.,
+                                                                                                                                                                                    roe_semester: 0.,
+                                                                                                                                                                                    roe_year: 0.,
+                                                                                                                                                                                    roe_2_years: 0.,
+                                                                                                                                                                                    roe_total: 0.,
+                                                                                                                                                                                });
+                                                                                                                                                                                
                                                                                                                                                                             },
                                                                                                                                                                             Err(e) => {
-                                                                                                                                                                                roe_year_to_date_str_err(&format!("Error code dAEaxMDB: Error parsing roe_year_to_date_f: {}", e), input.clone(), true);
+                                                                                                                                                                                roe_year_to_date_str_err(&format!("Error code dAEaxMDB: Error parsing roe_year_to_date: {}", e), input.clone(), true);
                                                                                                                                                                             },
                                                                                                                                                                         };
                                                                                                                                                                     },
                                                                                                                                                                     Some((erroneous1, erroneous2)) => {
-                                                                                                                                                                        roe_year_to_date_raw_err(&format!("Error code LQtGqpXK: roe_year_to_date_raw should have a value 2.324 % EA or similar; instead, it has an erroneos value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                                                                                                                        roe_year_to_date_raw_err(&format!("Error code LQtGqpXK: roe_year_to_date_raw should have a value 2.324 % EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
                                                                                                                                                                     },
                                                                                                                                                                     None => {
                                                                                                                                                                         roe_year_to_date_raw_err("Error code KdXVlabV: roe_year_to_date_raw should have a value 2.324 % EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
@@ -736,12 +737,12 @@ fn main() {
                                                                                                                                                         };
                                                                                                                                                     },
                                                                                                                                                     Err(e) => {
-                                                                                                                                                        roe_last_year_str_err(&format!("Error code HEuhdJrd: Error parsing roe_last_year_f: {}", e), input.clone(), true);
+                                                                                                                                                        roe_last_year_str_err(&format!("Error code HEuhdJrd: Error parsing roe_last_year: {}", e), input.clone(), true);
                                                                                                                                                     },
                                                                                                                                                 };
                                                                                                                                             },
                                                                                                                                             Some((erroneous1, erroneous2)) => {
-                                                                                                                                                roe_last_year_raw_err(&format!("Error code 5Hg28WR8: roe_last_year_raw should have a value 2.324 % EA or similar; instead, it has an erroneos value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                                                                                                roe_last_year_raw_err(&format!("Error code 5Hg28WR8: roe_last_year_raw should have a value 2.324 % EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
                                                                                                                                             },
                                                                                                                                             None => {
                                                                                                                                                 roe_last_year_raw_err("Error code A4vJN7cV: roe_last_year_raw should have a value 2.324 % EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
@@ -754,12 +755,12 @@ fn main() {
                                                                                                                                 };
                                                                                                                             },
                                                                                                                             Err(e) => {
-                                                                                                                                roe_next_to_last_year_str_err(&format!("Error code 0e0nPCTC: Error parsing roe_next_to_last_year_f: {}", e), input.clone(), true);
+                                                                                                                                roe_next_to_last_year_str_err(&format!("Error code 0e0nPCTC: Error parsing roe_next_to_last_year: {}", e), input.clone(), true);
                                                                                                                             },
                                                                                                                         }
                                                                                                                     },
                                                                                                                     Some((erroneous1, erroneous2)) => {
-                                                                                                                        roe_next_to_last_year_raw_err(&format!("Error code 4Xd090yi: roe_next_to_last_year_raw should have a value 2.324 % EA or similar; instead, it has an erroneos value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                                                                        roe_next_to_last_year_raw_err(&format!("Error code wLt82euc: roe_next_to_last_year_raw should have a value 2.324 % EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
                                                                                                                     },
                                                                                                                     None => {
                                                                                                                         roe_next_to_last_year_raw_err("Error code 4F55rnmP: roe_next_to_last_year_raw should have a value 2.324 % EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
@@ -772,15 +773,15 @@ fn main() {
                                                                                                         }
                                                                                                     },
                                                                                                     Some(erroneous_value) => {
-                                                                                                        unit_value_err(&format!("Error code OjPUwScT: Column ** should have an empty value; instead, it has an erroneos value {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous_value), input.clone(), true);
+                                                                                                        unit_value_err(&format!("Error code OjPUwScT: Column ** should have an empty value; instead, it has an erroneous value {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous_value), input.clone(), true);
                                                                                                     },
                                                                                                     None => {
-                                                                                                        unit_value_err("Error code Y0X6wn8Q: Column ** should have an empty value; instead, it has an erroneos value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
+                                                                                                        unit_value_err("Error code Y0X6wn8Q: Column ** should have an empty value; instead, it has an erroneous value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
                                                                                                     },
                                                                                                 }
                                                                                             },
                                                                                             Some(erroneous_value) => {
-                                                                                                unit_value_err(&format!("Error code ZgP73cLu: unit_change should have the value $.00; instead, it has an erroneos value {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous_value), input.clone(), true);
+                                                                                                unit_value_err(&format!("Error code ZgP73cLu: unit_change should have the value $.00; instead, it has an erroneous value {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous_value), input.clone(), true);
                                                                                             },
                                                                                             None => {
                                                                                                 unit_value_err("Error code Uk94XWcH: unit_change should have the value $.00; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
@@ -823,6 +824,342 @@ fn main() {
                                 }
                             }
                         }
+                        Mode1::Intermission => {
+                            if input.starts_with("Diaria 	") {
+                                mode = Mode1::Table1;
+                            } else if input == "EOF\n" {
+                                break;
+                            }
+                        }
+                        Mode1::Table1 => {
+                            if input == "\n" {
+                                mode = Mode1::Footer;
+                            } else if input == "EOF\n" {
+                                break;
+                            } else {
+                                let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
+                                match input_iter.next() {
+                                    Some(fund_str) => {
+                                        let mut fund_str_err = |message: &str, input, is_error| {
+                                            input_err(&format!("fund_str = {}, {}", fund_str, message), input, is_error);
+                                        };
+                                        match input_iter.next() {
+                                            Some(roe_day_raw) => {
+                                                let mut roe_day_raw_err = |message: &str, input, is_error| {
+                                                    fund_str_err(&format!("roe_day_raw = {}, {}", roe_day_raw, message), input, is_error);
+                                                };
+                                                match roe_day_raw.split_once(' ') {
+                                                    Some((roe_day_str, "% ")) => {
+                                                        let mut roe_day_str_err = |message: &str, input, is_error| {
+                                                            roe_day_raw_err(&format!("roe_day_str = {}, {}", roe_day_str, message), input, is_error);
+                                                        };
+                                                        match roe_day_str.parse::<f64>() {
+                                                            Ok(roe_day) => {
+                                                                let mut roe_day_err = |message: &str, input, is_error| {
+                                                                    roe_day_str_err(&format!("roe_day = {}, {}", roe_day, message), input, is_error);
+                                                                };
+                                                                match input_iter.next() {
+                                                                    Some(roe_day_annualized_raw) => {
+                                                                        let mut roe_day_annualized_raw_err = |message: &str, input, is_error| {
+                                                                            roe_day_err(&format!("roe_day_annualized_raw = {}, {}", roe_day_annualized_raw, message), input, is_error);
+                                                                        };
+                                                                        match roe_day_annualized_raw.split_once(' ') {
+                                                                            Some((roe_day_annualized_str, "%EA ")) => {
+                                                                                let mut roe_day_annualized_str_err = |message: &str, input, is_error| {
+                                                                                    roe_day_annualized_raw_err(&format!("roe_day_annualized_str = {}, {}", roe_day_annualized_str, message), input, is_error);
+                                                                                };
+                                                                                match roe_day_annualized_str.replace(&['$', ',', ' '][..], "").parse::<f64>() {
+                                                                                    Ok(roe_day_annualized) => {
+                                                                                        let mut roe_day_annualized_err = |message: &str, input, is_error| {
+                                                                                            roe_day_annualized_str_err(&format!("roe_day_annualized = {}, {}", roe_day_annualized, message), input, is_error);
+                                                                                        };
+                                                                                        match input_iter.next() {
+                                                                                            Some(roe_month_raw) => {
+                                                                                                let mut roe_month_raw_err = |message: &str, input, is_error| {
+                                                                                                    roe_day_annualized_err(&format!("roe_month_raw = {}, {}", roe_month_raw, message), input, is_error);
+                                                                                                };
+                                                                                                match roe_month_raw.split_once(' ') {
+                                                                                                    Some((roe_month_str, "%EA ")) => {
+                                                                                                        let mut roe_month_str_err = |message: &str, input, is_error| {
+                                                                                                            roe_month_raw_err(&format!("roe_month_str = {}, {}", roe_month_str, message), input, is_error);
+                                                                                                        };
+                                                                                                        match roe_month_str.parse::<f64>() {
+                                                                                                            Ok(roe_month) => {
+                                                                                                                let mut roe_month_err = |message: &str, input, is_error| {
+                                                                                                                    roe_month_str_err(&format!("roe_month = {}, {}", roe_month, message), input, is_error);
+                                                                                                                };
+                                                                                                                match input_iter.next() {
+                                                                                                                    Some(roe_trimester_raw) => {
+                                                                                                                        let mut roe_trimester_raw_err = |message: &str, input, is_error| {
+                                                                                                                            roe_month_err(&format!("roe_trimester_raw = {}, {}", roe_trimester_raw, message), input, is_error);
+                                                                                                                        };
+                                                                                                                        match roe_trimester_raw.split_once(' ') {
+                                                                                                                            Some((roe_trimester_str, "%EA ")) => {
+                                                                                                                                let mut roe_trimester_str_err = |message: &str, input, is_error| {
+                                                                                                                                    roe_trimester_raw_err(&format!("roe_trimester_str = {}, {}", roe_trimester_str, message), input, is_error);
+                                                                                                                                };
+                                                                                                                                match roe_trimester_str.parse::<f64>() {
+                                                                                                                                    Ok(roe_trimester) => {
+                                                                                                                                        let mut roe_trimester_err = |message: &str, input, is_error| {
+                                                                                                                                            roe_trimester_str_err(&format!("roe_trimester = {}, {}", roe_trimester, message), input, is_error);
+                                                                                                                                        };
+                                                                                                                                        match input_iter.next() {
+                                                                                                                                            Some(roe_semester_raw) => {
+                                                                                                                                                let mut roe_semester_raw_err = |message: &str, input, is_error| {
+                                                                                                                                                    roe_trimester_err(&format!("roe_semester_raw = {}, {}", roe_semester_raw, message), input, is_error);
+                                                                                                                                                };
+                                                                                                                                                match roe_semester_raw.split_once(' ') {
+                                                                                                                                                    Some((roe_semester_str, "%EA ")) => {
+                                                                                                                                                        let mut roe_semester_str_err = |message: &str, input, is_error| {
+                                                                                                                                                            roe_semester_raw_err(&format!("roe_semester_str = {}, {}", roe_semester_str, message), input, is_error);
+                                                                                                                                                        };
+                                                                                                                                                        match roe_semester_str.parse::<f64>() {
+                                                                                                                                                            Ok(roe_semester) => {
+                                                                                                                                                                let mut roe_semester_err = |message: &str, input, is_error| {
+                                                                                                                                                                    roe_semester_str_err(&format!("roe_semester = {}, {}", roe_semester, message), input, is_error);
+                                                                                                                                                                };
+                                                                                                                                                                match input_iter.next() {
+                                                                                                                                                                    Some(roe_year_raw) => {
+                                                                                                                                                                        let mut roe_year_raw_err = |message: &str, input, is_error| {
+                                                                                                                                                                            roe_semester_err(&format!("roe_year_raw = {}, {}", roe_year_raw, message), input, is_error);
+                                                                                                                                                                        };
+                                                                                                                                                                        match roe_year_raw.split_once(' ') {
+                                                                                                                                                                            Some((roe_year_str, "%EA ")) => {
+                                                                                                                                                                                let mut roe_year_str_err = |message: &str, input, is_error| {
+                                                                                                                                                                                    roe_year_raw_err(&format!("roe_year_str = {}, {}", roe_year_str, message), input, is_error);
+                                                                                                                                                                                };
+                                                                                                                                                                                match roe_year_str.parse::<f64>() {
+                                                                                                                                                                                    Ok(roe_year) => {
+                                                                                                                                                                                        let mut roe_year_err = |message: &str, input, is_error| {
+                                                                                                                                                                                            roe_year_str_err(&format!("roe_year = {}, {}", roe_year, message), input, is_error);
+                                                                                                                                                                                        };
+                                                                                                                                                                                        match input_iter.next() {
+                                                                                                                                                                                            Some(roe_2_years_raw) => {
+                                                                                                                                                                                                let mut roe_2_years_raw_err = |message: &str, input, is_error| {
+                                                                                                                                                                                                    roe_year_err(&format!("roe_2_years_raw = {}, {}", roe_2_years_raw, message), input, is_error);
+                                                                                                                                                                                                };
+                                                                                                                                                                                                match roe_2_years_raw.split_once(' ') {
+                                                                                                                                                                                                    Some((roe_2_years_str, "%EA ")) => {
+                                                                                                                                                                                                        let mut roe_2_years_str_err = |message: &str, input, is_error| {
+                                                                                                                                                                                                            roe_2_years_raw_err(&format!("roe_2_years_str = {}, {}", roe_2_years_str, message), input, is_error);
+                                                                                                                                                                                                        };
+                                                                                                                                                                                                        match roe_2_years_str.parse::<f64>() {
+                                                                                                                                                                                                            Ok(roe_2_years) => {
+                                                                                                                                                                                                                let mut roe_2_years_err = |message: &str, input, is_error| {
+                                                                                                                                                                                                                    roe_2_years_str_err(&format!("roe_2_years = {}, {}", roe_2_years, message), input, is_error);
+                                                                                                                                                                                                                };
+                                                                                                                                                                                                                match input_iter.next() {
+                                                                                                                                                                                                                    Some(roe_total_raw) => {
+                                                                                                                                                                                                                        let mut roe_total_raw_err = |message: &str, input, is_error| {
+                                                                                                                                                                                                                            roe_2_years_err(&format!("roe_total_raw = {}, {}", roe_total_raw, message), input, is_error);
+                                                                                                                                                                                                                        };
+                                                                                                                                                                                                                        match roe_total_raw.split_once(' ') {
+                                                                                                                                                                                                                            Some((roe_total_str, "%EA ")) => {
+                                                                                                                                                                                                                                let mut roe_total_str_err = |message: &str, input, is_error| {
+                                                                                                                                                                                                                                    roe_total_raw_err(&format!("roe_total_str = {}, {}", roe_total_str, message), input, is_error);
+                                                                                                                                                                                                                                };
+                                                                                                                                                                                                                                match roe_total_str.parse::<f64>() {
+                                                                                                                                                                                                                                    Ok(roe_total) => {
+                                                                                                                                                                                                                                        let mut roe_total_err = |message: &str, input, is_error| {
+                                                                                                                                                                                                                                            roe_total_str_err(&format!("roe_total = {}, {}", roe_total, message), input, is_error);
+                                                                                                                                                                                                                                        };
+                                                                                                                                                                                                                                        match input_iter.next() {
+                                                                                                                                                                                                                                            Some(roe_year_to_date_raw) => {
+                                                                                                                                                                                                                                                let mut roe_year_to_date_raw_err = |message: &str, input, is_error| {
+                                                                                                                                                                                                                                                    roe_total_err(&format!("roe_year_to_date_raw = {}, {}", roe_year_to_date_raw, message), input, is_error);
+                                                                                                                                                                                                                                                };
+                                                                                                                                                                                                                                                match roe_year_to_date_raw.split_once(' ') {
+                                                                                                                                                                                                                                                    Some((roe_year_to_date_str, "%EA\n")) => {
+                                                                                                                                                                                                                                                        let mut roe_year_to_date_str_err = |message: &str, input, is_error| {
+                                                                                                                                                                                                                                                            roe_year_to_date_raw_err(&format!("roe_year_to_date_str = {}, {}", roe_year_to_date_str, message), input, is_error);
+                                                                                                                                                                                                                                                        };
+                                                                                                                                                                                                                                                        match roe_year_to_date_str.parse::<f64>() {
+                                                                                                                                                                                                                                                            Ok(_roe_year_to_date) => {
+                                                                                                                                                                                                                                                                // let mut roe_year_to_date_err = |message: &str, input, is_error| {
+                                                                                                                                                                                                                                                                //     roe_year_to_date_str_err(&format!("roe_year_to_date = {}, {}", roe_year_to_date, message), input, is_error);
+                                                                                                                                                                                                                                                                // };
+                                                                                                                                                                                                                                                                match table_cuml.iter_mut().find(|u| u.fund == fund_str) {
+                                                                                                                                                                                                                                                                    Some(x) => {
+                                                                                                                                                                                                                                                                        x.roe_day = roe_day;
+                                                                                                                                                                                                                                                                        x.roe_day_annualized = roe_day_annualized;
+                                                                                                                                                                                                                                                                        x.roe_month = roe_month;
+                                                                                                                                                                                                                                                                        x.roe_trimester = roe_trimester;
+                                                                                                                                                                                                                                                                        x.roe_semester = roe_semester;
+                                                                                                                                                                                                                                                                        x.roe_year = roe_year;
+                                                                                                                                                                                                                                                                        x.roe_2_years = roe_2_years;
+                                                                                                                                                                                                                                                                        x.roe_total = roe_total;
+                                                                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                                                                    None => {},
+                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                            },
+                                                                                                                                                                                                                                                            Err(e) => {
+                                                                                                                                                                                                                                                                roe_year_to_date_str_err(&format!("Error code U3e0L5sj: Error parsing roe_year_to_date: {}", e), input.clone(), true);
+                                                                                                                                                                                                                                                            },
+                                                                                                                                                                                                                                                        };
+                                                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                                                    Some((erroneous1, erroneous2)) => {
+                                                                                                                                                                                                                                                        roe_year_to_date_raw_err(&format!("Error code snYD9Q9f: roe_year_to_date_raw should have a value 2.324 %EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                                                    None => {
+                                                                                                                                                                                                                                                        roe_year_to_date_raw_err("Error code K7vs50R5: roe_year_to_date_raw should have a value 2.324 %EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
+                                                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                            },
+                                                                                                                                                                                                                                            None => {
+                                                                                                                                                                                                                                                roe_total_err("Error code 6pI65S3G: Error parsing roe_year_to_date_raw", input.clone(), true);
+                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                        };
+                                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                                    Err(e) => {
+                                                                                                                                                                                                                                        roe_total_str_err(&format!("Error code M3k4mygL: Error parsing roe_total: {}", e), input.clone(), true);
+                                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                                };
+                                                                                                                                                                                                                            },
+                                                                                                                                                                                                                            Some((erroneous1, erroneous2)) => {
+                                                                                                                                                                                                                                roe_total_raw_err(&format!("Error code 7mV9BlWN: roe_total_raw should have a value 2.324 %EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                                                                                                                                                                            },
+                                                                                                                                                                                                                            None => {
+                                                                                                                                                                                                                                roe_total_raw_err("Error code 8cHQ7NMn: roe_total_raw should have a value 2.324 %EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
+                                                                                                                                                                                                                            },
+                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                    None => {
+                                                                                                                                                                                                                        roe_2_years_err("Error code H4du68nr: Error parsing roe_total_raw", input.clone(), true);
+                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                };
+                                                                                                                                                                                                            },
+                                                                                                                                                                                                            Err(e) => {
+                                                                                                                                                                                                                roe_2_years_str_err(&format!("Error code Lo8v1ItQ: Error parsing roe_2_years: {}", e), input.clone(), true);
+                                                                                                                                                                                                            },
+                                                                                                                                                                                                        }
+                                                                                                                                                                                                    },
+                                                                                                                                                                                                    Some((erroneous1, erroneous2)) => {
+                                                                                                                                                                                                        roe_2_years_raw_err(&format!("Error code aXp585U0: roe_2_years_raw should have a value 2.324 %EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                                                                                                                                                    },
+                                                                                                                                                                                                    None => {
+                                                                                                                                                                                                        roe_2_years_raw_err("Error code A8d0Q0EN: roe_2_years_raw should have a value 2.324 %EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
+                                                                                                                                                                                                    },
+                                                                                                                                                                                                }
+                                                                                                                                                                                            },
+                                                                                                                                                                                            None => {
+                                                                                                                                                                                                roe_year_err("Error code PX1d1y6Z: Error parsing roe_2_years_str", input.clone(), true);
+                                                                                                                                                                                            }
+                                                                                                                                                                                        }
+                                                                                                                                                                                    },
+                                                                                                                                                                                    Err(e) => {
+                                                                                                                                                                                        roe_year_str_err(&format!("Error code 3K50holX: Error parsing roe_year: {}", e), input.clone(), true);
+                                                                                                                                                                                    },
+                                                                                                                                                                                };
+                                                                                                                                                                            },
+                                                                                                                                                                            Some((erroneous1, erroneous2)) => {
+                                                                                                                                                                                roe_year_raw_err(&format!("Error code nO43crWp: roe_year_raw should have a value 2.324 %EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                                                                                                                            },
+                                                                                                                                                                            None => {
+                                                                                                                                                                                roe_year_raw_err("Error code 6x2UZ58c: roe_year_raw should have a value 2.324 %EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
+                                                                                                                                                                            },
+                                                                                                                                                                        }
+                                                                                                                                                                    },
+                                                                                                                                                                    None => {
+                                                                                                                                                                        roe_semester_err("Error code PEpnLnhi: Error parsing roe_year_raw", input.clone(), true);
+                                                                                                                                                                    }
+                                                                                                                                                                };
+                                                                                                                                                            },
+                                                                                                                                                            Err(e) => {
+                                                                                                                                                                roe_semester_str_err(&format!("Error code ZscOpTQy: Error parsing roe_semester: {}", e), input.clone(), true);
+                                                                                                                                                            },
+                                                                                                                                                        };
+                                                                                                                                                    },
+                                                                                                                                                    Some((erroneous1, erroneous2)) => {
+                                                                                                                                                        roe_semester_raw_err(&format!("Error code sIkkCffw: roe_semester_raw should have a value 2.324 %EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                                                                                                    },
+                                                                                                                                                    None => {
+                                                                                                                                                        roe_semester_raw_err("Error code BlkcVUyg: roe_semester_raw should have a value 2.324 %EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
+                                                                                                                                                    },
+                                                                                                                                                }
+                                                                                                                                            },
+                                                                                                                                            None => {
+                                                                                                                                                roe_trimester_err("Error code qdAPnejd: Error parsing roe_semester_raw", input.clone(), true);
+                                                                                                                                            }
+                                                                                                                                        };
+                                                                                                                                    },
+                                                                                                                                    Err(e) => {
+                                                                                                                                        roe_trimester_str_err(&format!("Error code bOubaWtc: Error parsing roe_trimester: {}", e), input.clone(), true);
+                                                                                                                                    },
+                                                                                                                                }
+                                                                                                                            },
+                                                                                                                            Some((erroneous1, erroneous2)) => {
+                                                                                                                                roe_trimester_raw_err(&format!("Error code SLKLyoxW: roe_trimester_raw should have a value 2.324 %EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                                                                            },
+                                                                                                                            None => {
+                                                                                                                                roe_trimester_raw_err("Error code gXLiMlbA: roe_trimester_raw should have a value 2.324 %EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
+                                                                                                                            },
+                                                                                                                        }
+                                                                                                                    },
+                                                                                                                    None => {
+                                                                                                                        roe_month_err("Error code VjlAwhmH: Error parsing roe_trimester_str", input.clone(), true);
+                                                                                                                    }
+                                                                                                                }
+                                                                                                            },
+                                                                                                            Err(e) => {
+                                                                                                                roe_month_str_err(&format!("Error code jHNqnLae: Error parsing roe_month: {}", e), input.clone(), true);
+                                                                                                            },
+                                                                                                        };
+                                                                                                    },
+                                                                                                    Some((erroneous1, erroneous2)) => {
+                                                                                                        roe_month_raw_err(&format!("Error code XcpcYSZK: roe_month_raw should have a value 2.324 %EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                                                    },
+                                                                                                    None => {
+                                                                                                        roe_month_raw_err("Error code jcPjVsko: roe_month_raw should have a value 2.324 %EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
+                                                                                                    },
+                                                                                                }
+                                                                                            },
+                                                                                            None => {
+                                                                                                roe_day_annualized_err("Error code elrIXnXB: Error parsing roe_month_raw", input.clone(), true);
+                                                                                            }
+                                                                                        };
+                                                                                    },
+                                                                                    Err(e) => {
+                                                                                        roe_day_annualized_str_err(&format!("Error code CjlluBXh: Error parsing roe_day_annualized: {}", e), input.clone(), true);
+                                                                                    },
+                                                                                };
+                                                                            },
+                                                                            Some((erroneous1, erroneous2)) => {
+                                                                                roe_day_annualized_raw_err(&format!("Error code VhhpJPnq: roe_day_annualized_raw should have a value 2.324 %EA or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                                            },
+                                                                            None => {
+                                                                                roe_day_annualized_raw_err("Error code YStYARdR: roe_day_annualized_raw should have a value 2.324 %EA or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
+                                                                            },
+                                                                        }
+                                                                    },
+                                                                    None => {
+                                                                        roe_day_err("Error code fSotfHSo: Error parsing roe_day_annualized_raw", input.clone(), true);
+                                                                    }
+                                                                };
+                                                            },
+                                                            Err(e) => {
+                                                                roe_day_str_err(&format!("Error code GTGsBwGx: Error parsing roe_day: {}", e), input.clone(), true);
+                                                            },
+                                                        }
+                                                    },
+                                                    Some((erroneous1, erroneous2)) => {
+                                                        roe_day_raw_err(&format!("Error code 4Xd090yi: roe_day_raw should have a value 2.324 % or similar; instead, it has an erroneous value {} {}; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", erroneous1, erroneous2), input.clone(), true);
+                                                    },
+                                                    None => {
+                                                        roe_day_raw_err("Error code nCcfThLw: roe_day_raw should have a value 2.324 % or similar; instead, it has no value; this might indicate that the bank has updated the fund values page. Please review the code accordingly.", input.clone(), true);
+                                                    },
+                                                }
+                                            },
+                                            None => {
+                                                fund_str_err("Error code zuZIYGcd: Error parsing roe_day_str", input.clone(), true);
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        input_err("Error code wKHKaGAg - Error parsing fund_str", input, true);
+                                    }
+                                }
+                            }
+                        }
                         Mode1::Footer => {
                             if input.starts_with("    Estas rentabilidades no son garant")
                                 || (input == "EOF\n")
@@ -848,6 +1185,8 @@ fn main() {
     let table = table; // Read-only
                        // dbg!(&table);
                        // return;
+
+    // Save the table to funds.dat
     if calculate_hash(&table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
     } else {
@@ -870,7 +1209,7 @@ fn main() {
         fs::rename(new_path, db_path).expect(w_err);
     }
     {
-        // Delete any png files from previous runs.
+        // Delete any png and csv files from previous runs.
         for dir in &["."] {
             match std::fs::read_dir(dir) {
                 Ok(dir_entries) => {
@@ -878,7 +1217,7 @@ fn main() {
                         if let Ok(entry) = res {
                             let path = entry.path();
                             if let Some(extension) = path.extension() {
-                                if extension == "png" {
+                                if (extension == "png") || (extension == "csv") {
                                     if let Some(file_name_os_str) = path.file_name() {
                                         if let Some(file_name) = file_name_os_str.to_str() {
                                             if let Err(e) = fs::remove_file(path.clone()) {
@@ -897,6 +1236,19 @@ fn main() {
                 Err(e) => {
                     panic!("Error f3QW0LUT cleaning up files from previous runs: {}", e);
                 }
+            }
+        }
+    }
+    {
+        // Save fund information to funds.csv
+        let csv_file_name = "funds.csv";
+        let csv_path = std::path::Path::new(&csv_file_name);
+        {
+            let csv_err = &*format!("Error writing to CSV file {}", csv_file_name);
+            let csv_file = fs::File::create(csv_path).expect(csv_err);
+            writeln!(&csv_file, "Portafolio,Dia %,Dia %EA,Mes %,3 Meses,6 Meses,Ano corrido,Ano,Ano pasado,Hace 2 anos,Ultimos 2 anos,Desde el inicio").expect("Error writing CSV file header");
+            for f in table_cuml {
+                writeln!(&csv_file, "{},{},{},{},{},{},{},{},{},{},{},{}", f.fund, f.roe_day, f.roe_day_annualized, f.roe_month, f.roe_trimester, f.roe_semester, f.roe_year_to_date, f.roe_year, f.roe_last_year, f.roe_next_to_last_year, f.roe_2_years, f.roe_total).expect("Writing CSV file header");
             }
         }
     }
