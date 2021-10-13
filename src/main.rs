@@ -1317,7 +1317,8 @@ fn main() {
         let minimum_date = date
             .checked_sub_signed(chrono::Duration::days(*max_duration))
             .unwrap();
-        let table0 = Table {
+        // Filtering and sorting table records to speed up figure production
+        let table = Table {
             table: table
                 .table
                 .iter()
@@ -1379,7 +1380,7 @@ fn main() {
                             let today_date = Date::from_utc(date, chrono::Utc);
                             let ranged_date =
                                 plotters::coord::types::RangedDate::from(start_date..today_date);
-                            let (consolidated_balance_i, consolidated_investment_i) = table0
+                            let (consolidated_balance_i, consolidated_investment_i) = table
                                 .table
                                 .iter()
                                 .fold((0i64, 0i64), |(accum_balance, accum_investment), series| {
@@ -1405,7 +1406,7 @@ fn main() {
                                 consolidated_balance_i as f64 / 100.0 - consolidated_investment;
                             let consolidated_variation_percent =
                                 100.0 * consolidated_variation / consolidated_investment;
-                            let series_vec: Vec<_> = table0
+                            let series_vec: Vec<_> = table
                                 .table
                                 .iter()
                                 .filter(|series: &&Series| {
@@ -1586,7 +1587,7 @@ fn main() {
                     }
                 });
         }
-        // Total fund value
+        // Unit value as a proportion of the initial value
         {
             let figure_file_name = "fondos01.png";
             let figure_path = std::path::Path::new(&figure_file_name);
@@ -1609,7 +1610,7 @@ fn main() {
                             let today_date = Date::from_utc(date, chrono::Utc);
                             let ranged_date =
                                 plotters::coord::types::RangedDate::from(start_date..today_date);
-                            let series_vec: Vec<_> = table0
+                            let series_vec: Vec<_> = table
                                 .table
                                 .iter()
                                 .filter(|series: &&Series| {
