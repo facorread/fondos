@@ -64,7 +64,7 @@ type Date = chrono::Date<chrono::Utc>;
 /// Represents variation of a fund.
 type Variation = (
     Date,
-    // Variation in the fund, as a proportion of the previous record.
+    // Variation in COP.
     f64,
 );
 
@@ -1380,6 +1380,7 @@ fn main() {
                             let today_date = Date::from_utc(date, chrono::Utc);
                             let ranged_date =
                                 plotters::coord::types::RangedDate::from(start_date..today_date);
+                            // Calculate consolidated balances across funds
                             let (consolidated_balance_i, consolidated_investment_i) = table
                                 .table
                                 .iter()
@@ -1420,40 +1421,33 @@ fn main() {
                                             .iter()
                                             .skip_while(|b| b.date < start_naive_date);
                                         let initial_balance = balance_iter.clone().next().unwrap();
-                                        let initial_balance_f64 = initial_balance.balance as f64;
                                         let mut action_iter = series
                                             .action
                                             .iter()
                                             .skip_while(|a| a.date < initial_balance.date) // skip_while() creates a new iter.
                                             .peekable();
                                         balance_iter
-                                            .scan(initial_balance_f64, |running_balance, b| {
+                                            .scan(initial_balance.balance, |running_balance, b| {
                                                 let mut adjusted_current_balance = b.balance;
-                                                let unadjusted_running_balance_f64 =
-                                                    *running_balance as f64;
+                                                let unadjusted_running_balance = *running_balance;
                                                 #[allow(clippy::while_let_on_iterator)]
                                                 while let Some(action) = action_iter.peek() {
                                                     // skip_while() creates a new iter; do not use in this loop.
                                                     if action.date >= b.date {
                                                         break;
                                                     }
-                                                    *running_balance += action.change as f64;
+                                                    *running_balance += action.change;
                                                     adjusted_current_balance -= action.change;
                                                     action_iter.next();
                                                 }
-                                                let variation1 = 100.0
-                                                    * adjusted_current_balance as f64
-                                                    / unadjusted_running_balance_f64
-                                                    - 100.0;
-                                                let variation2 = 100.0 * b.balance as f64
-                                                    / *running_balance as f64
-                                                    - 100.0;
+                                                let variation1 = adjusted_current_balance - unadjusted_running_balance;
+                                                let variation2 = b.balance - *running_balance;
                                                 Some((
                                                     Date::from_utc(b.date, chrono::Utc),
                                                     if variation1.abs() > variation2.abs() {
-                                                        variation2
+                                                        variation2 as f64
                                                     } else {
-                                                        variation1
+                                                        variation1 as f64
                                                     },
                                                 ))
                                             })
