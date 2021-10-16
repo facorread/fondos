@@ -220,6 +220,7 @@ fn main() {
                                 let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
                                 match input_iter.next() {
                                     Some(fund_str) => {
+                                        let fund_str = fund_str.trim();
                                         let mut fund_str_err = |message: &str, input, is_error| {
                                             input_err(&format!("fund_str = {}, {}", fund_str, message), input, is_error);
                                         };
@@ -372,6 +373,7 @@ fn main() {
                                                     };
                                                     match input_iter.next() {
                                                         Some(fund_str) => {
+                                                            let fund_str = fund_str.trim();
                                                             let mut fund_str_err = |message: &str, input|{
                                                                 date_err(&format!("fund_str = {}, {}", fund_str, message), input);
                                                             };
@@ -561,6 +563,7 @@ fn main() {
                                 let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
                                 match input_iter.next() {
                                     Some(fund_str) => {
+                                        let fund_str = fund_str.trim();
                                         let mut fund_str_err = |message: &str, input, is_error| {
                                             input_err(&format!("fund_str = {}, {}", fund_str, message), input, is_error);
                                         };
@@ -840,6 +843,7 @@ fn main() {
                                 let mut input_iter = input.split('\t'); // Do not use split_whitespace because funds and actions have spaces
                                 match input_iter.next() {
                                     Some(fund_str) => {
+                                        let fund_str = fund_str.trim();
                                         let mut fund_str_err = |message: &str, input, is_error| {
                                             input_err(&format!("fund_str = {}, {}", fund_str, message), input, is_error);
                                         };
