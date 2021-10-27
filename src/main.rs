@@ -791,8 +791,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fill0, fill1, fill2, fill3, fill4, fill5, fill6, fill7, fill8, fill9,
         ];
         let x_label_area_size = 70;
-        let y_label_area_size0 = 70;
-        let y_label_area_size1 = 40;
+        let y_label_area_size0 = 140;
+        let y_label_area_size1 = 120;
         let figure_margin = 10;
         let line_spacing = 30;
         let thick_stroke = 3;
@@ -1244,7 +1244,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
         }
     }
-    println!("Figures are ready.");
+    println!("Figures and data files are ready. Please run the following:\n    start *.png\n    start *.csv");
     Ok(())
 }
 
