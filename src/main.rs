@@ -1011,7 +1011,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .light_line_style(&color01)
                                 .x_desc("Fecha")
                                 .y_desc(if duration_index == 0 {
-                                    "Variación respecto al portafolio inicial (%)"
+                                    "Variación respecto al portafolio inicial ($)"
                                 } else {
                                     ""
                                 })
@@ -1066,7 +1066,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     drawing_area0
                                         .draw_text(
-                                            &format!("{} {:.2}%", label.fund, label.variation),
+                                            &format!("{} {:.2}", label.fund, label.variation),
                                             &("Calibri", text_size1)
                                                 .into_font()
                                                 .color(color_vec[label.index]),
