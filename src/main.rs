@@ -395,14 +395,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let original_hash = calculate_hash(&table);
     table.table.iter_mut().for_each(|s| s.fund = s.fund.trim().to_lowercase());
-    table.table.iter_mut().for_each(|f| {
-        f.action.iter_mut().for_each(|a| {
-            use chrono::Datelike;
-            if a.date.year() < 100 {
-                a.date = chrono::NaiveDate::from_ymd_opt(a.date.year() + 2000, a.date.month(), a.date.day()).unwrap();
-            }
-        });
-    });
     let mut table_aggregate: Vec<FundAggregate> = Vec::new();
     // Process balances.txt
     {
