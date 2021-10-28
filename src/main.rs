@@ -532,27 +532,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    // Save latest movements to file comparison.csv
-    {
-        let csv_file_name = "comparison.csv";
-        let csv_path = std::path::Path::new(&csv_file_name);
-        let csv_file = fs::File::create(csv_path).or_else(|e| Err(format!("Error writing to CSV file {}: {}", csv_file_name, e)))?;
-        writeln!(&csv_file, "Fund,Previous date,Previous $,Change,Last date,Last $")?;
-        table.table.iter().for_each(|series| {
-            let mut it = series.balance.iter().rev();
-            if let Some(last_record) = it.next() {
-                write!(&csv_file, "{}", &series.fund).unwrap_or_else(|e| panic!("Error writing to CSV file {}: {}", csv_file_name, e));
-                let last_record_balance = last_record.balance as f64 / 100.0;
-                if let Some(next_to_last_record) = it.next() {
-                    let next_to_last_record_balance = next_to_last_record.balance as f64 / 100.0;
-                    write!(&csv_file, ",{},{},{}", next_to_last_record.date, next_to_last_record_balance, last_record_balance - next_to_last_record_balance).unwrap_or_else(|e| panic!("Error writing to CSV file {}: {}", csv_file_name, e));
-                } else {
-                    write!(&csv_file, ",,,").unwrap_or_else(|e| panic!("Error writing to CSV file {}: {}", csv_file_name, e));
-                }
-                writeln!(&csv_file, ",{},{}", last_record.date, last_record_balance).unwrap_or_else(|e| panic!("Error writing to CSV file {}: {}", csv_file_name, e));
-            }
-        });
-    }
     // Process profit.txt
     {
         let mut mode = Mode1::Header;
@@ -745,6 +724,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 writeln!(&csv_file, "{},{},{},{},{},{},{},{},{},{},{},{}", f.fund, f.roe_day, f.roe_day_annualized, f.roe_month, f.roe_trimester, f.roe_semester, f.roe_year_to_date, f.roe_year, f.roe_last_year, f.roe_next_to_last_year, f.roe_2_years, f.roe_total).expect("Writing CSV file header");
             }
         }
+    }
+    // Save latest movements to file comparison.csv
+    {
+        let csv_file_name = "comparison.csv";
+        let csv_path = std::path::Path::new(&csv_file_name);
+        let csv_file = fs::File::create(csv_path).or_else(|e| Err(format!("Error writing to CSV file {}: {}", csv_file_name, e)))?;
+        let csv_panic = |e| panic!("Error writing to CSV file {}: {}", csv_file_name, e);
+        writeln!(&csv_file, "Fund,Previous date,Previous $,Change,Last date,Last $")?;
+        table.table.iter().for_each(|series| {
+            let mut it = series.balance.iter().rev();
+            if let Some(last_record) = it.next() {
+                write!(&csv_file, "{}", &series.fund).unwrap_or_else(csv_panic);
+                let last_record_balance = last_record.balance as f64 / 100.0;
+                if let Some(next_to_last_record) = it.next() {
+                    let next_to_last_record_balance = next_to_last_record.balance as f64 / 100.0;
+                    write!(&csv_file, ",{},{},{}", next_to_last_record.date, next_to_last_record_balance, last_record_balance - next_to_last_record_balance).unwrap_or_else(csv_panic);
+                } else {
+                    write!(&csv_file, ",,,").unwrap_or_else(csv_panic);
+                }
+                writeln!(&csv_file, ",{},{}", last_record.date, last_record_balance).unwrap_or_else(csv_panic);
+            }
+        });
     }
     {
         let background_color = &BLACK;
