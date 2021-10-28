@@ -35,7 +35,7 @@ enum Mode1 {
 /// Balances and actions expressed in cents. u32 is insufficient to represent large amounts. f64 cannot be hashed. u64 is a hassle for working with Actions.
 type Cents = i64;
 
-#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize)]
 /// Represents a record of the money balance in a fund.
 struct Balance {
     date: chrono::NaiveDate,
@@ -44,7 +44,7 @@ struct Balance {
     balance: Cents,
 }
 
-#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize)]
 /// Represents a record of whole fund value, unit value, and returns on equity.
 struct FundValue {
     date: chrono::NaiveDate,
@@ -54,7 +54,7 @@ struct FundValue {
     unit_value: Cents,
 }
 
-#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize)]
 /// Represents a record of an action in a fund.
 struct Action {
     date: chrono::NaiveDate,
@@ -395,6 +395,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let original_hash = calculate_hash(&table);
     table.table.iter_mut().for_each(|s| s.fund = s.fund.trim().to_lowercase());
+    // dbg!(&table.table.iter().find(|s| s.fund == "estable").unwrap().balance.iter().enumerate().collect::<Vec<_>>());
     let mut table_aggregate: Vec<FundAggregate> = Vec::new();
     // Process balances.txt
     {
@@ -654,6 +655,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+    }
+    // Sort table
+    {
+        table.table.iter_mut().for_each(|series| {
+            series.balance.sort_unstable();
+            series.action.sort_unstable();
+            series.fund_value.sort_unstable();
+        });
     }
     let table = table; // Read-only
                        // dbg!(&table);
@@ -940,9 +949,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 Some((
                                                     Date::from_utc(b.date, chrono::Utc),
                                                     if variation1.abs() > variation2.abs() {
-                                                        variation2 as f64
+                                                        variation2 as f64 / 100.0
                                                     } else {
-                                                        variation1 as f64
+                                                        variation1 as f64 / 100.0
                                                     },
                                                 ))
                                             })
