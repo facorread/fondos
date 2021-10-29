@@ -384,7 +384,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use plotters::prelude::*;
     use std::fs;
     let date = chrono::Local::today().naive_local();
-    let funds_file_name = "funds.dat";
+    let funds_file_name = "data/funds.dat";
     let r_err0 = |e| Err(format!("Error reading the file {}: {}", funds_file_name, e));
     let r_err1 = |e| Err(format!("Error reading the file {}: {}", funds_file_name, e)); // Two closures with similar name; they differ in the type of e. Reminder: Rust does not define generic closures.
     let w_err0 = |e| Err(format!("Error writing to file {}: {}", funds_file_name, e));
