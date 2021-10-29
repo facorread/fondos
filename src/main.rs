@@ -821,46 +821,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let minimum_date = date
             .checked_sub_signed(chrono::Duration::days(*max_duration))
             .unwrap();
-        // Filtering and sorting table records to speed up figure production
-        let table = Table {
-            table: table
-                .table
-                .iter()
-                .map(|series| Series {
-                    fund: series.fund.clone(),
-                    balance: {
-                        let mut b: Vec<_> = series
-                            .balance
-                            .iter()
-                            .filter(|balance| balance.date >= minimum_date)
-                            .cloned()
-                            .collect();
-                        b.sort_unstable_by(|b1, b2| b1.date.cmp(&b2.date));
-                        b
-                    },
-                    action: {
-                        let mut a: Vec<_> = series
-                            .action
-                            .iter()
-                            .filter(|action| action.date >= minimum_date)
-                            .cloned()
-                            .collect();
-                        a.sort_unstable_by(|a1, a2| a1.date.cmp(&a2.date));
-                        a
-                    },
-                    fund_value: {
-                        let mut f: Vec<_> = series
-                            .fund_value
-                            .iter()
-                            .filter(|fund_value| fund_value.date >= minimum_date)
-                            .cloned()
-                            .collect();
-                        f.sort_unstable_by(|f1, f2| f1.date.cmp(&f2.date));
-                        f
-                    }, //Vec::<_>::new(),
-                })
-                .collect(),
-        };
         // dbg!(&table0);
         {
             let figure_file_name = "fondos00.png";
