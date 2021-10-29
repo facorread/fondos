@@ -148,12 +148,17 @@ fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
     hasher.finish()
 }
 
-fn file(file_name: &str) -> std::io::BufReader<std::fs::File> {
-    // println!("Processing file {}", file_name);
-    use {std::fs::File, std::io::BufReader, std::path::Path};
+fn create_file(file_name: &str) -> Result<std::fs::File, String> {
+    use {std::fs::File, std::path::Path};
+    let path = Path::new(&file_name);
+    File::create(path).or_else(|err| Err(format!("Error creating file {}: {}", file_name, err)))
+}
+
+fn file_lines(file_name: &str) -> Result<std::io::Lines<std::io::BufReader<std::fs::File>>, String> {
+    use std::{fs::File, io::BufRead, path::Path};
     let input_path = Path::new(&file_name);
-    let file = File::open(input_path).unwrap_or_else(|err| panic!("Error reading file {}: {}", file_name, err));
-    BufReader::new(file)
+    let file = File::open(input_path).or_else(|err| Err(format!("Error reading file {}: {}", file_name, err)))?;
+    Ok(std::io::BufReader::new(file).lines())
 }
 
 fn parse_name<F>(name_opt: Option<&str>, error_prefix: F) -> Result<&str, String>
@@ -377,16 +382,16 @@ fn columns(n_durations: usize) -> usize {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use plotters::prelude::*;
-    use std::io::BufRead;
     use std::fs;
     let date = chrono::Local::today().naive_local();
     let funds_file_name = "funds.dat";
-    let r_err = &*format!("Error reading the file {}", funds_file_name);
-    let w_err = &*format!("Error writing to file {}", funds_file_name);
+    let r_err0 = |e| Err(format!("Error reading the file {}: {}", funds_file_name, e));
+    let r_err1 = |e| Err(format!("Error reading the file {}: {}", funds_file_name, e)); // Two closures with similar name; they differ in the type of e. Reminder: Rust does not define generic closures.
+    let w_err0 = |e| Err(format!("Error writing to file {}: {}", funds_file_name, e));
     let db_path = std::path::Path::new(&funds_file_name);
     let mut table: Table = if db_path.exists() {
-        let db_file = fs::File::open(db_path).expect(r_err);
-        bincode::deserialize_from(db_file).expect(r_err)
+        let db_file = fs::File::open(db_path).or_else(r_err0)?;
+        bincode::deserialize_from(db_file).or_else(r_err1)?
     } else {
         println!("Starting a new file. Ctrl + C if this is a mistake.");
         Table {
@@ -400,7 +405,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Process balances.txt
     {
         let mut mode = Mode::Header;
-        for (line_index, input_res) in file("balances.txt").lines().enumerate() {
+        for (line_index, input_res) in file_lines("balances.txt")?.enumerate() {
             let input = input_res?;
             match mode {
                 Mode::Header => {
@@ -455,7 +460,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut repetitions = Vec::<Repetition>::with_capacity(10);
         let mut skip_header = true;
-        for (line_index, input_res) in file("history.txt").lines().enumerate() {
+        for (line_index, input_res) in file_lines("history.txt")?.enumerate() {
             let input = input_res?;
             if skip_header {
                 if input.starts_with("Fecha	Nombre del ") {
@@ -536,7 +541,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Process profit.txt
     {
         let mut mode = Mode1::Header;
-        for (line_index, input_res) in file("profit.txt").lines().enumerate() {
+        for (line_index, input_res) in file_lines("profit.txt")?.enumerate() {
             let input = input_res?;
             match mode {
                 Mode1::Header => {
@@ -673,22 +678,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Data remains the same. Files remain unchanged.");
     } else {
         println!("Creating new funds file...");
-        let new_file_name = "funds.new";
+        let new_file_name = "data/funds.new";
         let new_path = std::path::Path::new(&new_file_name);
         {
-            let new_err = &*format!("Error writing to temporary file {}", funds_file_name);
-            let new_file = fs::File::create(new_path).expect(new_err);
-            bincode::serialize_into(new_file, &table).expect(new_err);
+            let new_file = fs::File::create(new_path).or_else(|e| Err(format!("Error writing to temporary file {}: {}", new_file_name, e)))?;
+            bincode::serialize_into(new_file, &table).or_else(|e| Err(format!("Error writing to temporary file {}: {}", new_file_name, e)))?;
         }
         if db_path.exists() {
             let backup_file_name = format!(
-                "funds_backup{}.dat",
+                "data/funds_backup{}.dat",
                 chrono::Local::now().format("%Y%m%dT%H%M%S")
             );
             let to = std::path::Path::new(&backup_file_name);
-            fs::rename(db_path, to).expect("Creating backup file");
+            fs::rename(db_path, to).or_else(|e| Err(format!("Error creating backup {}: {}", backup_file_name, e)))?;
         }
-        fs::rename(new_path, db_path).expect(w_err);
+        fs::rename(new_path, db_path).or_else(w_err0)?;
     }
     {
         // Delete any png and csv files from previous runs.
@@ -724,37 +728,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         // Save fund information to funds.csv
         let csv_file_name = "funds.csv";
-        let csv_path = std::path::Path::new(&csv_file_name);
-        {
-            let csv_err = &*format!("Error writing to CSV file {}", csv_file_name);
-            let csv_file = fs::File::create(csv_path).expect(csv_err);
-            writeln!(&csv_file, "Portafolio,Dia %,Dia %EA,Mes %,3 Meses,6 Meses,Ano corrido,Ano,Ano pasado,Hace 2 anos,Ultimos 2 anos,Desde el inicio").expect("Error writing CSV file header");
-            for f in table_aggregate {
-                writeln!(&csv_file, "{},{},{},{},{},{},{},{},{},{},{},{}", f.fund, f.roe_day, f.roe_day_annualized, f.roe_month, f.roe_trimester, f.roe_semester, f.roe_year_to_date, f.roe_year, f.roe_last_year, f.roe_next_to_last_year, f.roe_2_years, f.roe_total).expect("Writing CSV file header");
-            }
+        let csv_err = |e| Err(format!("Error writing to {}: {}", csv_file_name, e));
+        let csv_file = create_file(csv_file_name)?;
+        writeln!(&csv_file, "Portafolio,Dia %,Dia %EA,Mes %,3 Meses,6 Meses,Ano corrido,Ano,Ano pasado,Hace 2 anos,Ultimos 2 anos,Desde el inicio").or_else(csv_err)?;
+        for f in table_aggregate {
+            writeln!(&csv_file, "{},{},{},{},{},{},{},{},{},{},{},{}", f.fund, f.roe_day, f.roe_day_annualized, f.roe_month, f.roe_trimester, f.roe_semester, f.roe_year_to_date, f.roe_year, f.roe_last_year, f.roe_next_to_last_year, f.roe_2_years, f.roe_total).or_else(csv_err)?;
         }
     }
     // Save latest movements to file comparison.csv
     {
         let csv_file_name = "comparison.csv";
-        let csv_path = std::path::Path::new(&csv_file_name);
-        let csv_file = fs::File::create(csv_path).or_else(|e| Err(format!("Error writing to CSV file {}: {}", csv_file_name, e)))?;
-        let csv_panic = |e| panic!("Error writing to CSV file {}: {}", csv_file_name, e);
-        writeln!(&csv_file, "Fund,Previous date,Previous $,Change,Last date,Last $")?;
-        table.table.iter().for_each(|series| {
+        let csv_file = create_file(csv_file_name)?;
+        let csv_err = |e| Err(format!("Error writing to {}: {}", csv_file_name, e));
+        writeln!(&csv_file, "Fund,Previous date,Previous $,Change,Last date,Last $").or_else(csv_err)?;
+        for series in table.table.iter() {
             let mut it = series.balance.iter().rev();
             if let Some(last_record) = it.next() {
-                write!(&csv_file, "{}", &series.fund).unwrap_or_else(csv_panic);
+                write!(&csv_file, "{}", &series.fund).or_else(csv_err)?;
                 let last_record_balance = last_record.balance as f64 / 100.0;
                 if let Some(next_to_last_record) = it.next() {
                     let next_to_last_record_balance = next_to_last_record.balance as f64 / 100.0;
-                    write!(&csv_file, ",{},{},{}", next_to_last_record.date, next_to_last_record_balance, last_record_balance - next_to_last_record_balance).unwrap_or_else(csv_panic);
+                    write!(&csv_file, ",{},{},{}", next_to_last_record.date, next_to_last_record_balance, last_record_balance - next_to_last_record_balance).or_else(csv_err)?;
                 } else {
-                    write!(&csv_file, ",,,").unwrap_or_else(csv_panic);
+                    write!(&csv_file, ",,,").or_else(csv_err)?;
                 }
-                writeln!(&csv_file, ",{},{}", last_record.date, last_record_balance).unwrap_or_else(csv_panic);
+                writeln!(&csv_file, ",{},{}", last_record.date, last_record_balance).or_else(csv_err)?;
             }
-        });
+        };
     }
     {
         let background_color = &BLACK;
