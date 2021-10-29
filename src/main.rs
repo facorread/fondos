@@ -669,10 +669,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             series.fund_value.sort_unstable();
         });
     }
-    let table = table; // Read-only
-                       // dbg!(&table);
-                       // return;
-
     // Save the table to funds.dat
     if calculate_hash(&table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
@@ -817,11 +813,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use plotters::style::text_anchor::{HPos, Pos, VPos};
         let _text2c = text2.pos(Pos::new(HPos::Center, VPos::Top));
         let durations = &[7, 15, 30, 70]; // Days
-        let max_duration = durations.iter().max().unwrap();
-        let minimum_date = date
-            .checked_sub_signed(chrono::Duration::days(*max_duration))
-            .unwrap();
-        // dbg!(&table0);
+        // Retain recent records for plotting
+        {
+            let max_duration = durations.iter().max().unwrap();
+            let minimum_date = date
+                .checked_sub_signed(chrono::Duration::days(*max_duration))
+                .unwrap();
+            table.table.iter_mut().for_each(|series| {
+                series.balance.retain(|r| r.date >= minimum_date);
+                series.action.retain(|r| r.date >= minimum_date);
+                series.fund_value.retain(|r| r.date >= minimum_date);
+            });
+        }
         {
             let figure_file_name = "fondos00.png";
             let figure_path = std::path::Path::new(&figure_file_name);
