@@ -692,31 +692,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         // Delete any png and csv files from previous runs.
-        for dir in &["."] {
-            match std::fs::read_dir(dir) {
-                Ok(dir_entries) => {
-                    for res in dir_entries {
-                        if let Ok(entry) = res {
-                            let path = entry.path();
-                            if let Some(extension) = path.extension() {
-                                if (extension == "png") || (extension == "csv") {
-                                    if let Some(file_name_os_str) = path.file_name() {
-                                        if let Some(file_name) = file_name_os_str.to_str() {
-                                            if let Err(e) = fs::remove_file(path.clone()) {
-                                                panic!(
-                                                    "Could not remove file {} from a previous run: {}",
-                                                    file_name, e
-                                                );
-                                            }
-                                        }
-                                    }
+        for res in std::fs::read_dir(".")? {
+            if let Ok(entry) = res {
+                let path = entry.path();
+                if let Some(extension) = path.extension() {
+                    if (extension == "png") || (extension == "csv") {
+                        if let Some(file_name_os_str) = path.file_name() {
+                            if let Some(file_name) = file_name_os_str.to_str() {
+                                if let Err(e) = fs::remove_file(&path) {
+                                    panic!(
+                                        "Could not remove file {} from a previous run: {}",
+                                        file_name, e
+                                    );
                                 }
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    panic!("Error f3QW0LUT cleaning up files from previous runs: {}", e);
                 }
             }
         }
