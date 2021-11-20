@@ -400,7 +400,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let original_hash = calculate_hash(&table);
     table.table.iter_mut().for_each(|s| s.fund = s.fund.trim().to_lowercase());
-    // dbg!(&table.table.iter().find(|s| s.fund == "estable").unwrap().balance.iter().enumerate().collect::<Vec<_>>());
+
+    // A few examples useful for debugging
+    // table.table.iter().find(|s| s.fund == "capital").unwrap().action.iter().enumerate().for_each(|r| println!("{:?}", r));
+    // table.table.iter().find(|s| s.fund == "consumo global").unwrap().balance.iter().enumerate().for_each(|r| println!("{:?}", r));
+
+    // It is usual to transfer all money from one fund to another.
+    // In those cases, the emptied fund disappears from balances.txt and history.txt.
+    // We must manually account for this disappearance.
+    // {
+    //     let emptied_fund = &mut table.table.iter_mut().find(|s| s.fund == "consumo global").unwrap();
+    //     let date = chrono::NaiveDate::from_ymd(2021, 11, 19);
+    //     emptied_fund.action.push(Action {
+    //         date,
+    //         change: -321686700,
+    //     });
+    //     emptied_fund.action.push(Action {
+    //         date,
+    //         change: -1209632,
+    //     });
+    //     let date = date.succ();
+    //     match emptied_fund.balance.iter_mut().find(|b| b.date == date) {
+    //         Some(b) => {
+    //             b.balance = 0;
+    //         }
+    //         None => {
+    //             emptied_fund.balance.push(Balance {
+    //                 date,
+    //                 balance: 0,
+    //             });
+    //         }
+    //     }
+    // }
     let mut table_aggregate: Vec<FundAggregate> = Vec::new();
     // Process balances.txt
     {
@@ -669,6 +700,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             series.fund_value.sort_unstable();
         });
     }
+    // Check fund transfer consistency: Check for that every withdrawal from a fund has a corresponding deposit into another.
+    {
+        let non_empty = |s: &&Series| !s.balance.is_empty() && s.balance.last().unwrap().balance != 0;
+        let recent = |a: &&Action| a.date > chrono::NaiveDate::from_ymd(2021, 11, 13);
+        let fund_selection: Vec<_> = table.table.iter().filter(non_empty)
+        .map(|s| (s.fund.clone(), s.balance.last().unwrap())).collect();
+        for s1 in table.table.iter().filter(non_empty) {
+            for a1 in s1.action.iter().filter(recent) {
+                let mut expected_action = a1.clone();
+                expected_action.change = -expected_action.change;
+                let mut match_found = false;
+                for s2 in table.table.iter() {
+                    for a2 in s2.action.iter() {
+                        if *a2 == expected_action {
+                            match_found = true;
+                        }
+                    }
+                }
+                if !match_found {
+                    let best_matching_fund = fund_selection.iter().map(|(n, b)| (n, b, b.balance - a1.change))
+                    .min_by(|a, b| a.2.abs().cmp(&b.2.abs())).unwrap();
+                    println!("{}: no match: {:?}; nearest fund {:?}", s1.fund, a1, best_matching_fund);
+                }
+            }
+        }
+    }
+    // println!("Data is not saved to disk."); return Ok(());
     // Save the table to funds.dat
     if calculate_hash(&table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
