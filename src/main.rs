@@ -32,6 +32,14 @@ enum Mode1 {
     Table1,
 }
 
+// Status of the data in file balances.txt
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+enum BalancesTxtStatus {
+    ReadButUnprocessed,
+    Processed,
+    NoData,
+}
+
 /// Balances and actions expressed in cents. u32 is insufficient to represent large amounts. f64 cannot be hashed. u64 is a hassle for working with Actions.
 type Cents = i64;
 
@@ -173,11 +181,11 @@ F: Fn() -> String
     }
 }
 
-fn parse_date<F>(date_opt: Option<&str>, error_prefix: F) -> Result<chrono::NaiveDate, String>
+fn parse_date<F>(date: &str, error_prefix: F) -> Result<chrono::NaiveDate, String>
 where
 F: Fn() -> String
 {
-    let trimmed_date = date_opt.ok_or_else(|| format!("{}No valid date", error_prefix()))?.replace(&['$', ',', ' '][..], "");
+    let trimmed_date = date.replace(&['$', ',', ' '][..], "");
     let err = |msg: String| Err(format!("{}{}. Is the value {} correctly formatted as a d/m/y date?", error_prefix(), msg, trimmed_date));
     if trimmed_date.is_empty() {
         return err("{}Empty date".to_string())
@@ -189,6 +197,14 @@ F: Fn() -> String
     } else {
         Ok(parsed_date)
     }
+}
+
+fn parse_date_opt<F>(date_opt: Option<&str>, error_prefix: F) -> Result<chrono::NaiveDate, String>
+where
+F: Fn() -> String
+{
+    let ok_date = date_opt.ok_or_else(|| format!("{}No valid date", error_prefix()))?;
+    parse_date(ok_date, error_prefix)
 }
 
 fn parse_cents<F>(pesos_opt: Option<&str>, error_prefix: F) -> Result<Cents, String>
@@ -436,6 +452,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Process balances.txt
     {
         let mut mode = Mode::Header;
+        let mut input_lines = Vec::new();
+        let mut fund_data_status = BalancesTxtStatus::NoData;
         for (line_index, input_res) in file_lines("balances.txt")?.enumerate() {
             let input = input_res?;
             match mode {
@@ -447,45 +465,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Mode::Table => {
                     if input.starts_with("Total	") {
                         mode = Mode::Footer;
-                        continue;
-                    }
-                    let mut fields = input.split('\t');
-                    let fund_name = parse_name(fields.next(), || format!("Parsing fund name at balances.txt line {} field 1: ", line_index + 1))?.to_lowercase();
-                    let balance = parse_cents(fields.next(), || format!("Parsing {} fund balance at balances.txt line {} field 2: ", fund_name, line_index + 1))?;
-                    assert_eq!(fields.count(), 4); // 4 remaining fields, to be left unused
-                    match table.table.iter_mut().find(|s| s.fund == fund_name) {
-                        Some(series) => {
-                            match series
-                                .balance
-                                .iter_mut()
-                                .find(|b: &&mut Balance| b.date == date)
-                            {
-                                Some(x) => {
-                                    if x.balance != balance {
-                                        println!("Warning: Fund changing balance from {} to {}", x.balance, balance);
-                                        x.balance = balance;
-                                    }
-                                }
-                                None => {
-                                    series.balance.push(Balance { date, balance })
-                                }
-                            }
-                        }
-                        None => {
-                            table.table.push(Series {
-                                fund: String::from(fund_name),
-                                balance: vec![Balance { date, balance }],
-                                action: Vec::<_>::with_capacity(10),
-                                fund_value: Vec::<_>::with_capacity(10),
-                            });
-                        }
+                    } else {
+                        fund_data_status = BalancesTxtStatus::ReadButUnprocessed;
+                        input_lines.push((line_index, input));
                     }
                 }
                 Mode::Footer => {
-                    break; // Stop reading the file
+                    assert_eq!(fund_data_status, BalancesTxtStatus::ReadButUnprocessed);
+                    match input.strip_prefix("*Los valores presentados están a la fecha de cierre") {
+                        Some(date_str) => {
+                            let date = parse_date(date_str, || format!("Parsing date at balances.txt line {}: ", line_index + 1))?;
+                            fund_data_status = BalancesTxtStatus::Processed;
+                            for (line_index, input) in input_lines.into_iter() {
+                                let mut fields = input.split('\t');
+                                let fund_name = parse_name(fields.next(), || format!("Parsing fund name at balances.txt line {} field 1: ", line_index + 1))?.to_lowercase();
+                                let balance = parse_cents(fields.next(), || format!("Parsing {} fund balance at balances.txt line {} field 2: ", fund_name, line_index + 1))?;
+                                assert_eq!(fields.count(), 4); // 4 remaining fields, to be left unused
+                                match table.table.iter_mut().find(|s| s.fund == fund_name) {
+                                    Some(series) => {
+                                        match series
+                                            .balance
+                                            .iter_mut()
+                                            .find(|b: &&mut Balance| b.date == date)
+                                        {
+                                            Some(b) => {
+                                                if b.balance != balance {
+                                                    println!("Warning: Fund changing balance from {} to {}", b.balance, balance);
+                                                    b.balance = balance;
+                                                }
+                                            }
+                                            None => {
+                                                series.balance.push(Balance { date, balance })
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        table.table.push(Series {
+                                            fund: String::from(fund_name),
+                                            balance: vec![Balance { date, balance }],
+                                            action: Vec::<_>::with_capacity(10),
+                                            fund_value: Vec::<_>::with_capacity(10),
+                                        });
+                                    }
+                                }
+                            }
+                            break; // Stop reading the file
+                        },
+                        None => {},
+                    }
                 }
             }
         }
+        assert_ne!(fund_data_status, BalancesTxtStatus::ReadButUnprocessed);
     }
     // Process history.txt
     {
@@ -501,7 +532,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 skip_header = true; // Waiting to start processing the history of the next fund
             } else {
                 let mut fields = input.split('\t');
-                let date = parse_date(fields.next(), || format!("Parsing date at balances.txt line {} field 1: ", line_index + 1))?;
+                let date = parse_date_opt(fields.next(), || format!("Parsing date at balances.txt line {} field 1: ", line_index + 1))?;
                 let fund_name = parse_name(fields.next(), || format!("Parsing fund name at balances.txt line {} field 2: ", line_index + 1))?.to_lowercase();
                 let action_str = parse_name(fields.next(), || format!("Parsing event description at balances.txt line {} field 3: ", line_index + 1))?;
                 let _unused_str = parse_name(fields.next(), || format!("Parsing event type at balances.txt line {} field 4: ", line_index + 1))?;
@@ -590,7 +621,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let mut fields = input.split('\t');
                     let fund_name = parse_name(fields.next(), || format!("Parsing fund name at profit.txt line {} field 1: ", line_index + 1))?.to_lowercase();
-                    let date = parse_date(fields.next(), || format!("Parsing date at profit.txt line {} field 2: ", line_index + 1))?;
+                    let date = parse_date_opt(fields.next(), || format!("Parsing date at profit.txt line {} field 2: ", line_index + 1))?;
                     let fund_value = parse_cents(fields.next(), || format!("Parsing {} fund value at profit.txt line {} field 3: ", fund_name, line_index + 1))?;
                     let unit_value = parse_cents(fields.next(), || format!("Parsing {} unit value at profit.txt line {} field 4: ", fund_name, line_index + 1))?;
                     let zero_value = parse_name(fields.next(), || format!("Parsing {} a zero value at profit.txt line {} field 5: ", fund_name, line_index + 1))?;
@@ -1314,19 +1345,19 @@ mod tests {
     }
     #[test]
     fn date0() {
-        assert_eq!(super::parse_date(None, || "Test: ".to_string()), Err("Test: No valid date".to_string()));
+        assert_eq!(super::parse_date_opt(None, || "Test: ".to_string()), Err("Test: No valid date".to_string()));
     }
     #[test]
     fn date1() {
-        assert_eq!(super::parse_date(Some(" 31/12/2021 "), || "Test: ".to_string()), Ok(chrono::NaiveDate::from_ymd(2021, 12, 31)));
+        assert_eq!(super::parse_date_opt(Some(" 31/12/2021 "), || "Test: ".to_string()), Ok(chrono::NaiveDate::from_ymd(2021, 12, 31)));
     }
     #[test]
     fn date2() {
-        assert_eq!(super::parse_date(Some(" 31/13/2021 "), || "Test: ".to_string()), Err("Test: input is out of range. Is the value 31/13/2021 correctly formatted as a d/m/y date?".to_string()));
+        assert_eq!(super::parse_date_opt(Some(" 31/13/2021 "), || "Test: ".to_string()), Err("Test: input is out of range. Is the value 31/13/2021 correctly formatted as a d/m/y date?".to_string()));
     }
     #[test]
     fn date3() {
-        assert_eq!(super::parse_date(Some(" 31 / 12 / 21 "), || "Test: ".to_string()), Ok(chrono::NaiveDate::from_ymd(2021, 12, 31)));
+        assert_eq!(super::parse_date_opt(Some(" 31 / 12 / 21 "), || "Test: ".to_string()), Ok(chrono::NaiveDate::from_ymd(2021, 12, 31)));
     }
     #[test]
     fn percent0() {
