@@ -67,30 +67,12 @@ struct FundValue {
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize)]
 /// Represents a record of an action in a fund.
-struct OldAction {
-    date: chrono::NaiveDate,
-    /// Amount of the action
-    change: Cents,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize)]
-/// Represents a record of an action in a fund.
 struct Action {
     date: chrono::NaiveDate,
     /// Amount of the action
     change: Cents,
     /// Index of investor. Valid for deposits or withdrawals.
     investor: InvestorIndex,
-}
-
-impl From<OldAction> for Action {
-    fn from(a: OldAction) -> Action {
-        Action {
-            date: a.date,
-            change: a.change,
-            investor: 0,
-        }
-    }
 }
 
 type Date = chrono::Date<chrono::Utc>;
@@ -125,30 +107,11 @@ struct Label<'label_lifetime> {
 }
 
 #[derive(Clone, Debug, Deserialize, Hash, Serialize)]
-struct OldSeries {
-    fund: String,
-    balance: Vec<Balance>,
-    action: Vec<OldAction>,
-    fund_value: Vec<FundValue>,
-}
-
-#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
 struct Series {
     fund: String,
     balance: Vec<Balance>,
     action: Vec<Action>,
     fund_value: Vec<FundValue>,
-}
-
-impl From<OldSeries> for Series {
-    fn from(s: OldSeries) -> Series {
-        Series {
-            fund: s.fund,
-            balance: s.balance,
-            action: s.action.into_iter().map(|a| a.into()).collect(),
-            fund_value: s.fund_value,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -158,26 +121,11 @@ struct PlotSeries {
 }
 
 #[derive(Clone, Debug, Deserialize, Hash, Serialize)]
-struct OldTable {
-    // List of time series, in the same order than self.fund
-    table: Vec<OldSeries>,
-}
-
-#[derive(Clone, Debug, Deserialize, Hash, Serialize)]
 struct Table {
     // List of time series, in the same order than self.fund
     table: Vec<Series>,
     // List of investors. Do not remove elements.
     investor: Vec<String>,
-}
-
-impl From<OldTable> for Table {
-    fn from(t: OldTable) -> Table {
-        Table {
-            table: t.table.into_iter().map(|s| s.into()).collect(),
-            investor: vec!["Default investor".to_string(), "Investor 1".to_string()],
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -464,18 +412,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let r_err1 = |e| Err(format!("Error reading the file {}: {}", funds_file_name, e)); // Two closures with similar name; they differ in the type of e. Reminder: Rust does not define generic closures.
     let w_err0 = |e| Err(format!("Error writing to file {}: {}", funds_file_name, e));
     let db_path = std::path::Path::new(&funds_file_name);
-    let mut table: OldTable = if db_path.exists() {
+    let mut table: Table = if db_path.exists() {
         let db_file = fs::File::open(db_path).or_else(r_err0)?;
         bincode::deserialize_from(db_file).or_else(r_err1)?
     } else {
         println!("Starting a new file. Ctrl + C if this is a mistake.");
-        OldTable {
+        Table {
             table: Vec::<_>::with_capacity(10),
+            investor: vec!["Default investor".to_string(), "Investor 1".to_string()],
         }
     };
     let original_hash = calculate_hash(&table);
     table.table.iter_mut().for_each(|s| s.fund = s.fund.trim().to_lowercase());
-    let mut table: Table = table.into();
 
     // A few examples useful for debugging
     // table.table.iter().find(|s| s.fund == "capital").unwrap().action.iter().enumerate().for_each(|r| println!("{:?}", r));
