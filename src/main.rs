@@ -757,7 +757,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    // println!("Data is not saved to disk. Data has changed: {}", calculate_hash(&table) == original_hash); return Ok(());
+    // println!("Data is not saved to disk. Data {}", if calculate_hash(&table) == original_hash { "remains unchanged." } else { "has changed." }); return Ok(());
     // Save the table to funds.dat
     if calculate_hash(&table) == original_hash {
         println!("Data remains the same. Files remain unchanged.");
